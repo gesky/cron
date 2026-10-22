@@ -208,7 +208,7 @@
     modal.classList.remove('is-sending');
     card.scrollTop = 0;
     modal.classList.add('is-success');
-    // animação (~1s) + 2s visível, depois fecha sozinho
-    closeTimer = setTimeout(close, 3000);
+    // animação (~1s) + 3s visível, depois fecha sozinho
+    closeTimer = setTimeout(close, 4000);
   }
 })();

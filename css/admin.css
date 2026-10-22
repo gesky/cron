@@ -87,6 +87,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   display: flex; flex-direction: column; gap: 16px;
 }
 .auth-card__logo { height: 30px; width: auto; align-self: flex-start; margin-bottom: 12px; }
+.auth-card__logo--center { align-self: center; height: 36px; margin: 4px 0 20px; }
 .auth-card h1 { font-size: 1.6rem; }
 .auth-card p { color: var(--ink-70); font-size: .92rem; }
 .auth-card .btn-text { align-self: center; }

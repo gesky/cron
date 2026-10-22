@@ -58,7 +58,7 @@ Para ver o painel com dados de exemplo sem Firebase: abra `admin.html?demo` dire
 
 ## 7. Antes de ir ao ar
 
-- [ ] Preencher o e-mail de contato em `politica-de-privacidade.html` (marcado em verde) e revisar o texto.
+- [ ] Revisar o texto da `politica-de-privacidade.html`.
 - [ ] Trocar os placeholders de imagem do hero e das seções por imagens reais.
 - [ ] Colocar o Meta Pixel / GA4 no `<head>` do `index.html`, se for usar. O formulário já dispara `Lead` (Pixel) e `generate_lead` (GA4) quando eles existem.
 - [ ] Testar um envio real do formulário e conferir se ele aparece no painel.

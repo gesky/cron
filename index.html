@@ -25,6 +25,73 @@
 </head>
 <body>
 
+  <!-- ============ ABERTURA (ícone 3D) ============ -->
+  <div class="intro" id="intro" aria-hidden="true">
+    <div class="intro__burst">
+      <span class="intro__glow"></span>
+      <span class="intro__ring"></span>
+      <span class="intro__ring intro__ring--2"></span>
+      <span class="intro__sparks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+    </div>
+    <div class="intro__stage">
+      <div class="intro__body"><div class="intro__coin" id="introCoin"></div></div>
+      <div class="intro__shadow"></div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var root = document.documentElement, intro = document.getElementById('intro');
+      var seen = false, reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      try { seen = sessionStorage.getItem('cron_intro') === '1'; } catch (e) {}
+      if (/[?&]intro\b/.test(location.search)) seen = false; // ?intro força a abertura (pra testar)
+      if (seen || reduced) { intro.remove(); return; }
+      try { sessionStorage.setItem('cron_intro', '1'); } catch (e) {}
+      root.classList.add('is-intro');
+      // Padrão: fundo escuro com giro. ?intro=queda mostra a versão da queda com luz verde
+      var spin = !/[?&]intro=queda\b/.test(location.search);
+      intro.classList.add(spin ? 'intro--spin' : 'intro--drop');
+      // camadas empilhadas em profundidade = espessura 3D do ícone
+      var P = 'M195.9,111.98c26.43-39.36,38.58-79.98,17.4-101.17S151.47,1.78,112.1,28.23C72.74,1.78,32.11-10.38,10.92,10.81-10.27,31.99,1.88,72.62,28.31,111.98,1.81,151.38-10.4,192.08,10.81,213.29c21.21,21.21,61.9,9.01,101.29-17.48,39.39,26.49,80.09,38.69,101.29,17.48,21.21-21.21,9-61.91-17.5-101.31ZM28.19,28.08c7.53-7.53,30.91-3.58,60.33,13.95,1.32.79,1.46,2.65.27,3.63-4.84,3.99-9.58,8.15-14.2,12.45-.92.86-.94,2.32-.05,3.21l14.13,14.13c.84.84,2.21.86,3.08.04,4.49-4.18,8.95-8.08,13.36-11.72,4.05-3.35,9.95-3.35,14,0,4.41,3.64,8.87,7.54,13.36,11.72.87.81,2.24.8,3.08-.04l14.13-14.13c.89-.89.87-2.35-.05-3.21-4.62-4.29-9.37-8.45-14.2-12.45-1.19-.98-1.05-2.85.27-3.63,29.42-17.54,52.8-21.48,60.33-13.95,7.53,7.53,3.59,30.91-13.93,60.33-.79,1.32-2.65,1.46-3.63.27-3.97-4.8-8.1-9.51-12.36-14.09-.86-.92-2.32-.94-3.21-.05l-14.13,14.13c-.84.84-.86,2.21-.04,3.08,4.14,4.45,8.01,8.87,11.63,13.25,3.36,4.06,3.35,9.96,0,14.03-5.87,7.1-12.42,14.35-19.7,21.62-7.24,7.24-14.45,13.77-21.53,19.62-4.06,3.36-9.95,3.36-14.01,0-7.07-5.85-14.28-12.38-21.53-19.62-7.27-7.27-13.83-14.51-19.7-21.62-3.36-4.06-3.36-9.96,0-14.03,3.61-4.37,7.48-8.8,11.63-13.25.81-.87.8-2.24-.04-3.08l-14.13-14.13c-.89-.89-2.35-.87-3.21.05-4.26,4.58-8.39,9.29-12.36,14.09-.98,1.19-2.85,1.05-3.63-.27-17.53-29.42-21.46-52.8-13.93-60.33ZM28.08,196.02c-7.54-7.54-3.57-30.98,14.03-60.46.79-1.32,2.66-1.45,3.64-.27,6.46,7.83,13.36,15.43,20.55,22.62,7.15,7.15,14.72,14.02,22.51,20.46,1.19.98,1.05,2.85-.27,3.64-29.48,17.59-52.92,21.55-60.45,14.01ZM196.13,196.02c-7.54,7.54-30.98,3.58-60.45-14.01-1.32-.79-1.45-2.66-.27-3.64,7.79-6.44,15.35-13.31,22.51-20.46,7.19-7.19,14.09-14.79,20.55-22.62.98-1.19,2.85-1.05,3.64.27,17.6,29.48,21.57,52.92,14.03,60.46Z', coin = document.getElementById('introCoin'), N = 31, html = '';
+      // Volume em forma de tubo: fatias empilhadas em profundidade (z), cada uma
+      // afinada (erode) conforme o perfil de um círculo. Frente e fundo ficam
+      // estreitos, o meio fica na largura total. A cor clareia nas fatias que
+      // olham para a frente e escurece nas laterais, dando o sombreado redondo.
+      var R = 4.6, S = 224.21 / 120, defs = '';
+      function mix(a, b, t) {
+        var o = '#';
+        for (var c = 1; c < 7; c += 2) {
+          var v = Math.round(parseInt(a.substr(c, 2), 16) * (1 - t) + parseInt(b.substr(c, 2), 16) * t);
+          o += ('0' + v.toString(16)).slice(-2);
+        }
+        return o;
+      }
+      for (var i = 0; i < N; i++) {
+        var th = Math.PI * (N - 1 - i) / (N - 1);   // de trás (pi) para a frente (0)
+        var z = R * 1.3 * Math.cos(th);              // perfil um pouco mais fundo que largo
+        var zc = R * Math.cos(th);
+        var er = (R - Math.sqrt(Math.max(0, R * R - zc * zc))) * S * 0.92;
+        var n = zc / R;                              // -1 fundo, 0 lateral, 1 frente
+        // cor única da marca: lime na face, escurecendo só na curva das laterais
+        // e a luz vem de cima/esquerda: as fatias da frente deslocam um pouco
+        // nessa direção, deixando a sombra embaixo/direita do tubo
+        var col = n < 0 ? mix('#4a6400', '#253300', -n)
+                : mix('#4a6400', '#c6ff02', Math.min(1, Math.pow(n, 1.5) * 1.15));
+        var sh = n > 0 ? (-n * 1.6).toFixed(2) + 'px' : '0px';
+        var f = '';
+        if (er > 0.05) { defs += '<filter id="ie' + i + '" x="-5%" y="-5%" width="110%" height="110%"><feMorphology operator="erode" radius="' + er.toFixed(2) + '"/></filter>'; f = ' filter="url(#ie' + i + ')"'; }
+        html += '<svg class="intro__layer" style="--z:' + z.toFixed(2) + 'px;--s:' + sh + '" viewBox="0 0 224.21 224.1"><path d="' + P + '" fill="' + col + '"' + f + '/></svg>';
+      }
+      html = '<svg width="0" height="0" style="position:absolute"><defs>' + defs + '</defs></svg>' + html;
+      coin.innerHTML = html;
+      setTimeout(function () {
+        intro.classList.add('is-out');
+        root.classList.remove('is-intro');
+        document.dispatchEvent(new Event('cron:intro-end'));
+        setTimeout(function () { intro.remove(); }, 800);
+      }, spin ? 2050 : 1600);
+    })();
+  </script>
+
   <!-- ============ HEADER ============ -->
   <header class="header" id="header">
     <div class="header__inner">
@@ -37,7 +104,6 @@
         <a href="#projetos">Projetos</a>
         <a href="#painel">O painel</a>
         <a href="#formatos">Formatos</a>
-        <a href="#processo">Processo</a>
         <a href="#duvidas">Dúvidas</a>
         <a href="#" class="btn btn--primary btn--sm nav__cta" data-cta="nav-mobile">Conversar sobre meu projeto</a>
       </nav>
@@ -56,23 +122,23 @@
     <section class="hero">
       <div class="container hero__grid">
         <div class="hero__copy">
-          <p class="eyebrow"><span class="dot"></span>Sites e sistemas sob medida</p>
-          <h1>A empresa é sua. <span class="mark">O controle também.</span></h1>
-          <p class="lead">A Cron cria sites e sistemas que trabalham pela sua operação. Marca, site e painel de controle no mesmo projeto, feitos por quem desenha e programa.</p>
+          <p class="eyebrow reveal"><span class="dot"></span>Sites e sistemas sob medida</p>
+          <h1 class="reveal">A empresa é sua. <span class="mark">O controle também.</span></h1>
+          <p class="lead reveal">A Cron cria sites e sistemas que trabalham pela sua operação. Marca, site e painel de controle no mesmo projeto, feitos por quem desenha e programa.</p>
 
-          <div class="hero__ctas">
+          <div class="hero__ctas reveal">
             <a href="#" class="btn btn--primary" data-cta="hero-primary">Conversar sobre meu projeto <span class="arrow">→</span></a>
             <a href="#projetos" class="btn btn--ghost" data-cta="hero-secondary">Ver projetos no ar</a>
           </div>
 
-          <ul class="hero__chips" aria-label="O que está incluso">
+          <ul class="hero__chips reveal" aria-label="O que está incluso">
             <li>Design de marca</li>
             <li>Desenvolvimento sob medida</li>
             <li>Painel próprio</li>
           </ul>
         </div>
 
-        <div class="hero__visual">
+        <div class="hero__visual reveal">
           <div class="ph ph--hero" role="img" aria-label="Espaço para imagem">
             <span class="ph__label">Mockup em vídeo<br><small>site + painel em uso, loop curto</small></span>
           </div>
@@ -275,65 +341,6 @@
       </div>
     </section>
 
-    <!-- ============ PROCESSO ============ -->
-    <section class="section section--soft" id="processo">
-      <div class="container">
-        <div class="section__head reveal">
-          <p class="eyebrow">Processo</p>
-          <h2>Um caminho, quatro etapas. Nenhuma pulada.</h2>
-        </div>
-
-        <ol class="steps">
-          <li class="step reveal">
-            <span class="step__n">01</span>
-            <h3>Conversa</h3>
-            <p>Entendemos como sua operação funciona antes de falar de layout. O site certo começa no problema certo.</p>
-          </li>
-          <li class="step reveal">
-            <span class="step__n">02</span>
-            <h3>Projeto</h3>
-            <p>Estrutura, fluxo e design aprovados por você antes da primeira linha de código. Sem surpresa no meio do caminho.</p>
-          </li>
-          <li class="step reveal">
-            <span class="step__n">03</span>
-            <h3>Construção</h3>
-            <p>Desenvolvimento com entregas que você vê funcionando. Ajustes durante o caminho, não depois do prazo.</p>
-          </li>
-          <li class="step reveal">
-            <span class="step__n">04</span>
-            <h3>No ar e por perto</h3>
-            <p>Lançamento, treinamento do painel e suporte depois da entrega. A Cron não some quando o site sobe.</p>
-          </li>
-        </ol>
-
-        <div class="center reveal">
-          <a href="#" class="btn btn--primary" data-cta="processo">Começar pela conversa <span class="arrow">→</span></a>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ SOBRE ============ -->
-    <section class="section">
-      <div class="container about">
-        <div class="ph ph--about reveal" role="img" aria-label="Espaço para imagem">
-          <span class="ph__label">Foto de bastidor<br><small>trabalho em andamento, tom real</small></span>
-        </div>
-
-        <div class="about__copy reveal">
-          <p class="eyebrow">Quem está por trás</p>
-          <h2>Função primeiro. Sem exagero, sem enfeite.</h2>
-          <p>A Cron nasceu da junção de duas coisas que raramente andam juntas: um designer de marcas que programa. Isso muda o projeto inteiro. A identidade não se perde no código, e o código não ignora a marca.</p>
-          <p class="about__sign">Fundada por Pedro Spadotto, designer de marcas e desenvolvedor.</p>
-
-          <ul class="principles">
-            <li><strong>Função primeiro.</strong> Cada elemento existe por um motivo.</li>
-            <li><strong>Presença sempre.</strong> Antes, durante e depois da entrega.</li>
-            <li><strong>Dono do resultado.</strong> Prazo é compromisso, não estimativa.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
     <!-- ============ FAQ ============ -->
     <section class="section section--soft" id="duvidas">
       <div class="container faq">
@@ -343,33 +350,33 @@
         </div>
 
         <div class="faq__list">
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>Quanto custa um projeto?</summary>
-            <p>Depende do que sua operação precisa. Depois da primeira conversa, você recebe uma proposta fechada, com escopo, prazo e valor definidos. Sem cobrança surpresa no meio do caminho.</p>
+            <div class="faq__a"><p>Depende do que sua operação precisa. Depois da primeira conversa, você recebe uma proposta fechada, com escopo, prazo e valor definidos. Sem cobrança surpresa no meio do caminho.</p></div>
           </details>
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>Quanto tempo leva?</summary>
-            <p>Sites institucionais são mais rápidos. Projetos com sistema são planejados em etapas, com entregas que você acompanha. O prazo exato entra na proposta.</p>
+            <div class="faq__a"><p>Sites institucionais são mais rápidos. Projetos com sistema são planejados em etapas, com entregas que você acompanha. O prazo exato entra na proposta.</p></div>
           </details>
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>Vou conseguir atualizar o site sozinho?</summary>
-            <p>Sim. Todo projeto sai com um painel feito para a sua rotina, e você recebe treinamento para usar. Trocar foto ou publicar novidade não vira chamado.</p>
+            <div class="faq__a"><p>Sim. Todo projeto sai com um painel feito para a sua rotina, e você recebe treinamento para usar. Trocar foto ou publicar novidade não vira chamado.</p></div>
           </details>
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>Já tenho um site. Dá para refazer?</summary>
-            <p>Dá. Avaliamos o que já existe, mantemos o que funciona e reconstruímos o que trava a sua operação.</p>
+            <div class="faq__a"><p>Dá. Avaliamos o que já existe, mantemos o que funciona e reconstruímos o que trava a sua operação.</p></div>
           </details>
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>Vocês cuidam de domínio e hospedagem?</summary>
-            <p>Sim. Configuramos tudo para o site ir ao ar sem você precisar entender de servidor.</p>
+            <div class="faq__a"><p>Sim. Configuramos tudo para o site ir ao ar sem você precisar entender de servidor.</p></div>
           </details>
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>E depois que o site estiver no ar?</summary>
-            <p>A Cron continua por perto. Suporte, ajustes e novas funcionalidades conforme a empresa cresce.</p>
+            <div class="faq__a"><p>A Cron continua por perto. Suporte, ajustes e novas funcionalidades conforme a empresa cresce.</p></div>
           </details>
-          <details class="reveal" name="faq">
+          <details class="reveal faq__item">
             <summary>Atendem empresas de outras cidades?</summary>
-            <p>Sim. O atendimento é remoto para todo o Brasil, com reuniões online e conversa direta pelo WhatsApp.</p>
+            <div class="faq__a"><p>Sim. O atendimento é remoto para todo o Brasil, com reuniões online e conversa direta pelo WhatsApp.</p></div>
           </details>
         </div>
       </div>
@@ -403,15 +410,14 @@
         <a href="#projetos">Projetos</a>
         <a href="#painel">O painel</a>
         <a href="#formatos">Formatos</a>
-        <a href="#processo">Processo</a>
         <a href="#duvidas">Dúvidas</a>
       </div>
 
       <div class="footer__col">
         <h4>Contato</h4>
-        <a href="#" data-cta="footer-whatsapp">WhatsApp</a>
-        <a href="#" data-cta="footer-instagram" data-no-form>Instagram</a>
-        <a href="#" data-cta="footer-email" data-no-form>E-mail</a>
+        <a href="https://wa.me/5514991732262" target="_blank" rel="noopener" data-cta="footer-whatsapp" data-no-form>WhatsApp (14) 99173-2262</a>
+        <a href="https://www.instagram.com/cronwebstudio/" target="_blank" rel="noopener" data-cta="footer-instagram" data-no-form>Instagram @cronwebstudio</a>
+        <a href="mailto:contato@cronwebstudio.com.br" data-cta="footer-email" data-no-form>contato@cronwebstudio.com.br</a>
         <span>Bauru, SP · Atendimento em todo o Brasil</span>
       </div>
     </div>
@@ -427,7 +433,7 @@
   <div class="lf" id="leadModal" hidden>
     <div class="lf__backdrop" data-close></div>
 
-    <div class="lf__card" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
+    <div class="lf__card" data-lenis-prevent role="dialog" aria-modal="true" aria-labelledby="leadTitle">
       <button type="button" class="lf__close" data-close aria-label="Fechar">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>

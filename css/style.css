@@ -651,7 +651,8 @@ summary::after {
   background: var(--paper) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a1a1a' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M12 6v12M6 12h12'/%3E%3C/svg%3E") center / 13px no-repeat;
   transition: transform .3s var(--ease), background-color .3s;
 }
-details[open] summary::after { transform: rotate(45deg); background-color: var(--lime); }
+details[open]:not(.is-closing) summary::after { transform: rotate(45deg); background-color: var(--lime); }
+details .faq__a p { margin: 0; }
 details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
 
 /* ---------- CTA final ---------- */
@@ -1187,3 +1188,148 @@ html.has-cursor input[type="tel"], html.has-cursor textarea { cursor: text !impo
 .cursor.is-down .cursor__dot { transform: scale(.7); }
 .cursor.is-link.is-down .cursor__icon { transform: scale(.85) rotate(15deg); }
 .cursor.is-text .cursor__dot { transform: scale(.4); opacity: .6; }
+
+
+/* =========================================================
+   Abertura com o ícone da Cron (só 1x por visita)
+   .intro--drop: fundo branco, ícone 3D cai e solta uma luz verde sutil
+   .intro--spin: versão anterior, fundo escuro com giro (?intro=giro)
+   ========================================================= */
+html.is-intro, html.is-intro body { overflow: hidden; }
+
+.intro {
+  position: fixed; inset: 0; z-index: 10000;
+  display: grid; place-items: center;
+  background: var(--paper);
+  transition: opacity .7s var(--ease), filter .7s var(--ease), transform .7s var(--ease);
+}
+.intro.is-out { opacity: 0; filter: blur(12px); transform: scale(1.03); pointer-events: none; }
+
+.intro__stage, .intro__burst { grid-area: 1 / 1; }
+.intro__stage { position: relative; width: 120px; height: 120px; perspective: 700px; animation: introFade .3s ease-out both; }
+.intro__body, .intro__coin { position: absolute; inset: 0; transform-style: preserve-3d; }
+
+.intro__layer {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  transform: translate3d(var(--s, 0px), var(--s, 0px), var(--z));
+}
+
+.intro__shadow {
+  position: absolute; left: 50%; bottom: -40px;
+  width: 96px; height: 14px; margin-left: -48px;
+  border-radius: 50%;
+}
+.intro__burst { position: relative; width: 0; height: 0; pointer-events: none; }
+.intro__burst > * { position: absolute; left: 0; top: 0; }
+
+@keyframes introFade { from { opacity: 0; } }
+
+/* ---------- Queda + luz verde ---------- */
+.intro--drop .intro__body { animation: dropFall 1.25s both; }
+.intro--drop .intro__coin { animation: dropSpin .9s cubic-bezier(.3, 0, .2, 1) both; }
+.intro--drop .intro__shadow {
+  background: radial-gradient(closest-side, rgba(26, 26, 26, .22), transparent);
+  filter: blur(3px);
+  animation: dropShadow 1.25s both;
+}
+.intro--drop.is-out .intro__stage { animation: introLift .7s var(--ease) forwards; }
+
+/* cai acelerando, achata no impacto e assenta */
+@keyframes dropFall {
+  0%   { transform: translateY(-46vh) scale(.9); animation-timing-function: cubic-bezier(.55, 0, .9, .45); }
+  64%  { transform: translateY(0) scale(1, 1); animation-timing-function: ease-out; }
+  71%  { transform: translateY(6px) scale(1.12, .86); animation-timing-function: cubic-bezier(.2, .7, .3, 1); }
+  84%  { transform: translateY(-10px) scale(.97, 1.04); animation-timing-function: ease-in-out; }
+  100% { transform: translateY(0) scale(1); }
+}
+@keyframes dropSpin {
+  0%   { transform: rotateX(24deg) rotateY(-300deg); }
+  100% { transform: rotateX(0) rotateY(0); }
+}
+@keyframes dropShadow {
+  0%   { transform: scaleX(.2); opacity: 0; }
+  64%  { transform: scaleX(1); opacity: 1; }
+  71%  { transform: scaleX(1.25); opacity: 1; }
+  100% { transform: scaleX(1); opacity: .8; }
+}
+@keyframes introLift { to { transform: translateY(-8px) scale(.92); opacity: 0; } }
+
+/* luz no impacto (começa em ~0,8s, quando o ícone toca o chão) */
+.intro--drop .intro__glow {
+  width: 520px; height: 520px; margin: -260px 0 0 -260px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(198, 255, 2, .55), rgba(198, 255, 2, .16) 45%, transparent 72%);
+  filter: blur(8px);
+  opacity: 0;
+  animation: burstGlow 1.1s .78s cubic-bezier(.2, .7, .2, 1) both;
+}
+.intro--drop .intro__ring {
+  width: 160px; height: 160px; margin: -80px 0 0 -80px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(160, 210, 0, .7);
+  opacity: 0;
+  animation: burstRing .9s .8s cubic-bezier(.15, .7, .3, 1) both;
+}
+.intro--drop .intro__ring--2 { border-width: 1px; animation-delay: .9s; animation-duration: 1.1s; }
+.intro--drop .intro__sparks i {
+  position: absolute; left: -2px; top: -2px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #a6d900;
+  opacity: 0;
+  transform: rotate(var(--a)) translateX(0);
+  animation: burstSpark .8s .8s cubic-bezier(.15, .7, .3, 1) both;
+}
+.intro__sparks i:nth-child(1)  { --a: 8deg; }
+.intro__sparks i:nth-child(2)  { --a: 44deg;  width: 3px; height: 3px; }
+.intro__sparks i:nth-child(3)  { --a: 80deg; }
+.intro__sparks i:nth-child(4)  { --a: 118deg; width: 3px; height: 3px; }
+.intro__sparks i:nth-child(5)  { --a: 152deg; }
+.intro__sparks i:nth-child(6)  { --a: 188deg; width: 3px; height: 3px; }
+.intro__sparks i:nth-child(7)  { --a: 224deg; }
+.intro__sparks i:nth-child(8)  { --a: 262deg; width: 3px; height: 3px; }
+.intro__sparks i:nth-child(9)  { --a: 298deg; }
+.intro__sparks i:nth-child(10) { --a: 334deg; width: 3px; height: 3px; }
+
+@keyframes burstGlow {
+  0%   { transform: scale(.15); opacity: 0; }
+  18%  { opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes burstRing {
+  0%   { transform: scale(.5); opacity: 0; }
+  12%  { opacity: 1; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+@keyframes burstSpark {
+  0%   { transform: rotate(var(--a)) translateX(50px); opacity: 0; }
+  15%  { opacity: .9; }
+  100% { transform: rotate(var(--a)) translateX(150px); opacity: 0; }
+}
+
+/* ---------- Giro (versão anterior) ---------- */
+.intro--spin {
+  background:
+    radial-gradient(60% 50% at 50% 45%, rgba(198, 255, 2, .10), transparent 70%),
+    var(--ink);
+}
+.intro--spin .intro__burst { display: none; }
+.intro--spin .intro__coin { animation: introSpin 1.9s cubic-bezier(.65, 0, .25, 1) both; }
+.intro--spin .intro__shadow {
+  bottom: -46px;
+  background: radial-gradient(closest-side, rgba(198, 255, 2, .35), transparent);
+  filter: blur(4px);
+  animation: introShadow 1.9s cubic-bezier(.65, 0, .25, 1) both;
+}
+.intro--spin.is-out .intro__stage { animation: introExit .6s var(--ease) forwards; }
+
+@keyframes introSpin {
+  0%   { transform: translateY(14px) rotateX(18deg) rotateY(-200deg) scale(.55); }
+  70%  { transform: translateY(-4px) rotateX(-8deg) rotateY(18deg) scale(1.02); }
+  100% { transform: translateY(0) rotateX(0) rotateY(0) scale(1); }
+}
+@keyframes introShadow {
+  0% { transform: scaleX(.4); opacity: 0; }
+  70% { transform: scaleX(1.1); opacity: .9; }
+  100% { transform: scaleX(1); opacity: .7; }
+}
+@keyframes introExit { to { transform: scale(.7); opacity: 0; } }

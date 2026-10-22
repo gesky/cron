@@ -127,7 +127,15 @@
         }
       });
     }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
-    items.forEach(function (el) { io.observe(el); });
+    var startReveal = function () { items.forEach(function (el) { io.observe(el); }); };
+    // Com a abertura na tela, o hero só entra depois que ela sai
+    if (document.documentElement.classList.contains('is-intro')) {
+      if (lenis) lenis.stop();
+      document.addEventListener('cron:intro-end', function () {
+        if (lenis) lenis.start();
+        setTimeout(startReveal, 150);
+      }, { once: true });
+    } else startReveal();
   } else {
     items.forEach(function (el) { el.classList.add('in-view'); });
   }
@@ -141,14 +149,43 @@
     }
   };
 
-  // FAQ: abrir uma pergunta fecha a que estiver aberta
-  // (o atributo name="faq" já faz isso nos navegadores novos; aqui fica o reforço)
-  var faqs = document.querySelectorAll('details[name="faq"]');
+  // FAQ: abre e fecha com animação; abrir uma fecha a que estiver aberta
+  var faqs = Array.prototype.slice.call(document.querySelectorAll('.faq__item'));
+  var EASE = 'cubic-bezier(.2, .7, .2, 1)';
+
+  function faqAnim(d, opening) {
+    var a = d.querySelector('.faq__a');
+    if (!a || reduced || !a.animate) { d.open = opening; return; }
+    if (d._anim) d._anim.cancel();
+    if (opening) d.open = true;
+    var h = a.scrollHeight;
+    var frames = opening
+      ? [{ height: '0px', opacity: 0, filter: 'blur(6px)' }, { height: h + 'px', opacity: 1, filter: 'blur(0)' }]
+      : [{ height: h + 'px', opacity: 1, filter: 'blur(0)' }, { height: '0px', opacity: 0, filter: 'blur(6px)' }];
+    a.style.overflow = 'hidden';
+    d._anim = a.animate(frames, { duration: opening ? 480 : 360, easing: EASE });
+    d._anim.onfinish = function () {
+      if (!opening) { d.open = false; d.classList.remove('is-closing'); }
+      a.style.overflow = '';
+      d._anim = null;
+      if (lenis) lenis.resize();
+    };
+  }
+
   faqs.forEach(function (d) {
-    d.addEventListener('toggle', function () {
-      if (!d.open) return;
-      faqs.forEach(function (o) { if (o !== d && o.open) o.open = false; });
-      if (lenis) setTimeout(function () { lenis.resize(); }, 50);
+    d.querySelector('summary').addEventListener('click', function (e) {
+      e.preventDefault();
+      var opening = !d.open || d.classList.contains('is-closing');
+      d.classList.toggle('is-closing', !opening);
+      if (opening) {
+        faqs.forEach(function (o) {
+          if (o !== d && o.open && !o.classList.contains('is-closing')) {
+            o.classList.add('is-closing');
+            faqAnim(o, false);
+          }
+        });
+      }
+      faqAnim(d, opening);
     });
   });
 
