@@ -4,12 +4,12 @@
 
 window.CRON = (function () {
   var config = {
-    apiKey: "COLE_AQUI",
-    authDomain: "COLE_AQUI.firebaseapp.com",
-    projectId: "COLE_AQUI",
-    storageBucket: "COLE_AQUI.appspot.com",
-    messagingSenderId: "COLE_AQUI",
-    appId: "COLE_AQUI"
+    apiKey: "AIzaSyCSC_zDbZt1ga1GAu3-ldz8CDlEpXhOq9I",
+    authDomain: "cron-91280.firebaseapp.com",
+    projectId: "cron-91280",
+    storageBucket: "cron-91280.firebasestorage.app",
+    messagingSenderId: "421142538286",
+    appId: "1:421142538286:web:358161b84cfce251c497bf"
   };
 
   var configured = !!config.apiKey && config.apiKey.indexOf("COLE") !== 0;
