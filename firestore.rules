@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Cron Web Studio · Regras do Firestore
+// - projects: leitura pública só dos publicados; escrita só do admin
+// - leads: qualquer visitante pode CRIAR (com consentimento LGPD e campos validados);
+//          só o admin lê, edita e exclui
+// - admins: um documento com o UID do admin libera o painel (criado à mão no console)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /admins/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /projects/{id} {
+      allow read: if isAdmin() || resource.data.published == true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /leads/{id} {
+      allow create: if validLead(request.resource.data);
+      allow read, update, delete: if isAdmin();
+    }
+
+    function validLead(d) {
+      return d.keys().hasOnly([
+          'name', 'whatsapp', 'email', 'company', 'need', 'message',
+          'source', 'sourceLabel', 'project',
+          'consent', 'consentText', 'consentAt',
+          'createdAt', 'status', 'notes', 'page', 'referrer', 'utm'
+        ])
+        && d.name is string && d.name.size() >= 2 && d.name.size() <= 120
+        && d.whatsapp is string && d.whatsapp.size() >= 10 && d.whatsapp.size() <= 15
+        && d.email is string && d.email.size() <= 160
+        && d.company is string && d.company.size() <= 120
+        && d.need is string && d.need.size() <= 40
+        && d.message is string && d.message.size() <= 2000
+        && d.source is string && d.source.size() <= 80
+        && d.sourceLabel is string && d.sourceLabel.size() <= 120
+        && d.project is string && d.project.size() <= 120
+        && d.consent == true
+        && d.consentText is string && d.consentText.size() <= 600
+        && d.consentAt == request.time
+        && d.createdAt == request.time
+        && d.status == 'novo'
+        && d.notes == ''
+        && d.page is string && d.page.size() <= 500
+        && d.referrer is string && d.referrer.size() <= 500
+        && d.utm is map;
+    }
+  }
+}

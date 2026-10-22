@@ -11,24 +11,26 @@
   <meta property="og:locale" content="pt_BR">
   <meta property="og:site_name" content="Cron Web Studio">
   <meta property="og:title" content="Cron Web Studio | Sites e sistemas sob medida">
-  <meta property="og:description" content="Sites e sistemas que fazem sua empresa rodar no automático.">
+  <meta property="og:description" content="A empresa é sua. O controle também. Sites e sistemas com painel próprio.">
   <meta property="og:url" content="https://cronwebstudio.com.br/">
   <meta property="og:image" content="https://cronwebstudio.com.br/img/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
 
-  <link rel="icon" href="img/favicon.png">
+  <link rel="icon" href="img/cron-icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
 
   <!-- ============ HEADER ============ -->
-  <header class="header" id="topo">
-    <div class="container header__inner">
+  <header class="header" id="header">
+    <div class="header__inner">
       <a href="#topo" class="header__logo" aria-label="Cron Web Studio, voltar ao topo">
-        <img src="img/logo-cron.png" alt="Cron Web Studio" class="logo-img" data-fallback="Cron">
+        <img src="img/logo-cron.png" alt="Cron Web Studio" class="logo-img logo-img--dark" data-fallback="Cron">
+        <img src="img/logo-cron-claro.png" alt="" aria-hidden="true" class="logo-img logo-img--onDark">
       </a>
 
       <nav class="nav" id="nav" aria-label="Navegação principal">
@@ -48,14 +50,14 @@
     </div>
   </header>
 
-  <main>
+  <main id="topo">
 
     <!-- ============ HERO ============ -->
     <section class="hero">
       <div class="container hero__grid">
         <div class="hero__copy">
           <p class="eyebrow"><span class="dot"></span>Sites e sistemas sob medida</p>
-          <h1>Sua empresa rodando <span class="mark">no automático.</span></h1>
+          <h1>A empresa é sua. <span class="mark">O controle também.</span></h1>
           <p class="lead">A Cron cria sites e sistemas que trabalham pela sua operação. Marca, site e painel de controle no mesmo projeto, feitos por quem desenha e programa.</p>
 
           <div class="hero__ctas">
@@ -76,30 +78,24 @@
           </div>
 
           <div class="log" aria-hidden="true">
-            <div class="log__head"><span class="dot"></span> cron · operação ativa</div>
+            <div class="log__head">
+              <span class="log__title">Painel da sua empresa</span>
+              <span class="log__status"><span class="dot"></span>site no ar</span>
+            </div>
             <ul class="log__list">
-              <li><span>08:00</span> catálogo atualizado</li>
-              <li><span>08:05</span> 3 novos contatos recebidos</li>
-              <li><span>08:10</span> relatório enviado ao time</li>
-              <li class="is-live"><span>agora</span> rodando<i class="caret"></i></li>
+              <li><span>08:12</span><p><b>Você</b> publicou um produto novo</p></li>
+              <li><span>09:40</span><p><b>Equipe</b> atualizou as fotos da galeria</p></li>
+              <li><span>11:03</span><p><b>Site</b> recebeu um contato novo</p></li>
             </ul>
+            <div class="log__foot">
+              <span>Pedidos para agência hoje</span>
+              <strong>0</strong>
+            </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ============ CLIENTES ============ -->
-    <section class="clients" aria-label="Clientes">
-      <div class="container clients__inner">
-        <p class="clients__title">Quem já roda com a Cron</p>
-        <ul class="clients__list">
-          <li class="ph ph--logo"><span class="ph__label">Meccal</span></li>
-          <li class="ph ph--logo"><span class="ph__label">Plane Aviation</span></li>
-          <li class="ph ph--logo"><span class="ph__label">MedControl</span></li>
-          <li class="ph ph--logo"><span class="ph__label">Charlie Zero</span></li>
-        </ul>
-      </div>
-    </section>
 
     <!-- ============ POSICIONAMENTO ============ -->
     <section class="section">
@@ -139,7 +135,7 @@
           <p class="section__sub">Cada projeto nasceu de um problema real da empresa. E todos continuam sendo usados todos os dias.</p>
         </div>
 
-        <div class="cases">
+        <div class="cases" id="cases">
 
           <article class="case reveal">
             <div class="ph ph--case" role="img" aria-label="Espaço para imagem">
@@ -156,8 +152,8 @@
                 <li>Mensagens centralizadas</li>
               </ul>
               <div class="case__ctas">
-                <a href="#" class="btn btn--primary btn--sm" data-cta="case-meccal">Quero um assim</a>
-                <a href="#" class="link" data-cta="case-meccal-site">Ver site no ar ↗</a>
+                <a href="#" class="btn btn--primary btn--sm" data-cta="case-meccal" data-project="Meccal">Quero um assim</a>
+                <a href="#" class="link" data-cta="case-meccal-site" data-no-form>Ver site no ar ↗</a>
               </div>
             </div>
           </article>
@@ -180,8 +176,8 @@
                 <li>Upload de imagens</li>
               </ul>
               <div class="case__ctas">
-                <a href="#" class="btn btn--primary btn--sm" data-cta="case-plane">Quero um assim</a>
-                <a href="#" class="link" data-cta="case-plane-site">Ver site no ar ↗</a>
+                <a href="#" class="btn btn--primary btn--sm" data-cta="case-plane" data-project="Plane Aviation">Quero um assim</a>
+                <a href="#" class="link" data-cta="case-plane-site" data-no-form>Ver site no ar ↗</a>
               </div>
             </div>
           </article>
@@ -200,8 +196,8 @@
                 <li>Mobile first</li>
               </ul>
               <div class="case__ctas">
-                <a href="#" class="btn btn--primary btn--sm" data-cta="case-medcontrol">Quero um assim</a>
-                <a href="#" class="link" data-cta="case-medcontrol-site">Ver site no ar ↗</a>
+                <a href="#" class="btn btn--primary btn--sm" data-cta="case-medcontrol" data-project="MedControl">Quero um assim</a>
+                <a href="#" class="link" data-cta="case-medcontrol-site" data-no-form>Ver site no ar ↗</a>
               </div>
             </div>
           </article>
@@ -347,31 +343,31 @@
         </div>
 
         <div class="faq__list">
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>Quanto custa um projeto?</summary>
             <p>Depende do que sua operação precisa. Depois da primeira conversa, você recebe uma proposta fechada, com escopo, prazo e valor definidos. Sem cobrança surpresa no meio do caminho.</p>
           </details>
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>Quanto tempo leva?</summary>
             <p>Sites institucionais são mais rápidos. Projetos com sistema são planejados em etapas, com entregas que você acompanha. O prazo exato entra na proposta.</p>
           </details>
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>Vou conseguir atualizar o site sozinho?</summary>
             <p>Sim. Todo projeto sai com um painel feito para a sua rotina, e você recebe treinamento para usar. Trocar foto ou publicar novidade não vira chamado.</p>
           </details>
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>Já tenho um site. Dá para refazer?</summary>
             <p>Dá. Avaliamos o que já existe, mantemos o que funciona e reconstruímos o que trava a sua operação.</p>
           </details>
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>Vocês cuidam de domínio e hospedagem?</summary>
             <p>Sim. Configuramos tudo para o site ir ao ar sem você precisar entender de servidor.</p>
           </details>
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>E depois que o site estiver no ar?</summary>
             <p>A Cron continua por perto. Suporte, ajustes e novas funcionalidades conforme a empresa cresce.</p>
           </details>
-          <details class="reveal">
+          <details class="reveal" name="faq">
             <summary>Atendem empresas de outras cidades?</summary>
             <p>Sim. O atendimento é remoto para todo o Brasil, com reuniões online e conversa direta pelo WhatsApp.</p>
           </details>
@@ -383,7 +379,7 @@
     <section class="final">
       <div class="container final__inner reveal">
         <p class="eyebrow eyebrow--dark">Próximo passo</p>
-        <h2>Sua empresa no automático começa com uma conversa.</h2>
+        <h2>Sua empresa, rodando independente, começa com uma conversa.</h2>
         <p>Conte como funciona a sua operação. A gente mostra onde um site pode trabalhar por você.</p>
         <div class="final__ctas">
           <a href="#" class="btn btn--dark" data-cta="final-whatsapp">Conversar no WhatsApp <span class="arrow">→</span></a>
@@ -414,23 +410,116 @@
       <div class="footer__col">
         <h4>Contato</h4>
         <a href="#" data-cta="footer-whatsapp">WhatsApp</a>
-        <a href="#" data-cta="footer-instagram">Instagram</a>
-        <a href="#" data-cta="footer-email">E-mail</a>
+        <a href="#" data-cta="footer-instagram" data-no-form>Instagram</a>
+        <a href="#" data-cta="footer-email" data-no-form>E-mail</a>
         <span>Bauru, SP · Atendimento em todo o Brasil</span>
       </div>
     </div>
 
     <div class="container footer__bottom">
       <span>© <span id="year">2026</span> Cron Web Studio. Todos os direitos reservados.</span>
-      <span class="footer__cron">0 8 * * 1-5 · sempre rodando</span>
+      <a href="politica-de-privacidade.html" class="footer__legal">Política de Privacidade</a>
     </div>
   </footer>
+
+
+  <!-- ============ FORMULÁRIO DE LEAD ============ -->
+  <div class="lf" id="leadModal" hidden>
+    <div class="lf__backdrop" data-close></div>
+
+    <div class="lf__card" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
+      <button type="button" class="lf__close" data-close aria-label="Fechar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+
+      <div class="lf__content">
+        <p class="eyebrow"><span class="dot"></span>Resposta pelo WhatsApp</p>
+        <h2 class="lf__title" id="leadTitle">Vamos conversar sobre o seu projeto.</h2>
+        <p class="lf__sub" id="leadSub">Deixe seu contato. A Cron te chama no WhatsApp pra entender como sua operação funciona.</p>
+
+        <form id="leadForm" novalidate>
+          <div class="lf__grid">
+            <div class="field">
+              <label for="lfName">Seu nome</label>
+              <input id="lfName" name="name" type="text" autocomplete="name" placeholder="Como podemos te chamar?" required>
+              <span class="field__err">Digite seu nome.</span>
+            </div>
+            <div class="field">
+              <label for="lfWhats">WhatsApp</label>
+              <input id="lfWhats" name="whatsapp" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="(14) 99999-9999" required>
+              <span class="field__err">Confira o número com DDD.</span>
+            </div>
+            <div class="field">
+              <label for="lfCompany">Empresa <em>opcional</em></label>
+              <input id="lfCompany" name="company" type="text" autocomplete="organization" placeholder="Nome da empresa">
+            </div>
+            <div class="field">
+              <label for="lfEmail">E-mail <em>opcional</em></label>
+              <input id="lfEmail" name="email" type="email" autocomplete="email" placeholder="voce@empresa.com">
+              <span class="field__err">Confira o e-mail.</span>
+            </div>
+          </div>
+
+          <fieldset class="need">
+            <legend>O que você precisa?</legend>
+            <div class="need__opts">
+              <label class="chip"><input type="radio" name="need" value="institucional"><span>Site institucional</span></label>
+              <label class="chip"><input type="radio" name="need" value="sistema"><span>Site + sistema</span></label>
+              <label class="chip"><input type="radio" name="need" value="nao-sei"><span>Ainda não sei</span></label>
+            </div>
+          </fieldset>
+
+          <div class="field">
+            <label for="lfMsg">Conte rapidinho sobre sua operação <em>opcional</em></label>
+            <textarea id="lfMsg" name="message" rows="3" maxlength="2000" placeholder="O que sua empresa faz e o que você quer resolver com o site."></textarea>
+          </div>
+
+          <!-- antispam: invisível para pessoas -->
+          <div class="hp" aria-hidden="true"><label>Site <input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+
+          <label class="consent">
+            <input type="checkbox" name="consent" required>
+            <span class="consent__box" aria-hidden="true"></span>
+            <span class="consent__text" id="consentText">Concordo que a Cron Web Studio use estes dados para entrar em contato sobre o meu projeto, conforme a <a href="politica-de-privacidade.html" target="_blank" rel="noopener" data-no-form>Política de Privacidade</a> e a LGPD.</span>
+          </label>
+          <span class="consent__err">Para continuar, aceite o uso dos seus dados para contato.</span>
+
+          <button type="submit" class="btn btn--primary lf__submit" id="leadSubmit">
+            <span class="lf__submitText">Quero conversar <span class="arrow">→</span></span>
+            <span class="lf__spinner" aria-hidden="true"></span>
+          </button>
+          <p class="lf__error" id="leadError" role="alert"></p>
+          <p class="lf__note">Sem spam. Seus dados ficam só com a Cron.</p>
+        </form>
+      </div>
+
+      <div class="lf__thanks" aria-live="polite">
+        <div class="thanks__mark">
+          <span class="thanks__ring"></span>
+          <svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l7.5 7.5L37.5 19"/></svg>
+        </div>
+        <h3>Recebido<span class="thanks__comma">, </span><span id="leadThanksName"></span>!</h3>
+        <p>A Cron vai te chamar no WhatsApp em breve.</p>
+      </div>
+    </div>
+  </div>
 
   <!-- WhatsApp flutuante -->
   <a href="#" class="float-wa" data-cta="float-whatsapp" aria-label="Conversar no WhatsApp">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .1-1.3c0-.1-.2-.2-.5-.3Z"/></svg>
   </a>
 
+  <!-- Rolagem suave (Lenis), carrega antes do main.js que a inicializa -->
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1/dist/lenis.min.js"></script>
+
+  <!-- Firebase (projetos + leads) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+
   <script src="js/main.js"></script>
+  <script src="js/projects.js"></script>
+  <script src="js/lead-form.js"></script>
+  <script src="js/cursor.js"></script>
 </body>
 </html>
