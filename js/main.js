@@ -225,6 +225,42 @@
     }, { threshold: 0.2 }).observe(motion);
   }
 
+  // Paralaxe da foto do Próximo passo: fundo e pessoa andam em ritmos diferentes
+  // com a rolagem, e no desktop também acompanham o mouse
+  var px = document.getElementById('parallax');
+  if (px && !reduced) {
+    var cur = { s: 0, mx: 0, my: 0 }, tgt = { s: 0, mx: 0, my: 0 }, pxRaf = null, pxOn = false;
+    function pxRead() {
+      var r = px.getBoundingClientRect();
+      var c = r.top + r.height / 2 - window.innerHeight / 2;
+      tgt.s = Math.max(-1, Math.min(1, c / (window.innerHeight / 2 + r.height / 2)));
+    }
+    function pxTick() {
+      pxRead();
+      var still = true;
+      for (var k in cur) { cur[k] += (tgt[k] - cur[k]) * 0.1; if (Math.abs(tgt[k] - cur[k]) > 0.001) still = false; }
+      var h = px.offsetHeight;
+      px.style.setProperty('--by', (cur.s * h * 0.05 - cur.my * 8).toFixed(2) + 'px');
+      px.style.setProperty('--bx', (-cur.mx * 10).toFixed(2) + 'px');
+      px.style.setProperty('--fy', (-cur.s * h * 0.035 + cur.my * 10).toFixed(2) + 'px');
+      px.style.setProperty('--fx', (cur.mx * 16).toFixed(2) + 'px');
+      pxRaf = (pxOn || !still) ? requestAnimationFrame(pxTick) : null;
+    }
+    function pxStart() { if (!pxRaf) pxRaf = requestAnimationFrame(pxTick); }
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (e) { pxOn = e[0].isIntersecting; if (pxOn) pxStart(); }).observe(px);
+    }
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      px.addEventListener('mousemove', function (e) {
+        var r = px.getBoundingClientRect();
+        tgt.mx = (e.clientX - r.left) / r.width - 0.5;
+        tgt.my = (e.clientY - r.top) / r.height - 0.5;
+        pxStart();
+      });
+      px.addEventListener('mouseleave', function () { tgt.mx = 0; tgt.my = 0; pxStart(); });
+    }
+  }
+
   // Ano do rodapé
   var year = document.getElementById('year');
   if (year) year.textContent = new Date().getFullYear();
