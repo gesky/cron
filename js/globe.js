@@ -107,6 +107,26 @@
   });
   [[0, 10], [0, 3], [1, 11], [5, 9], [2, 7], [3, 14], [13, 16], [6, 19], [12, 20]].forEach(function (p) { linkOnce(p[0], p[1]); });
 
+  // Visitas de fora: de vez em quando uma conexão sai do Brasil para outro país,
+  // ou chega de lá. Pontos internacionais ficam discretos até um pulso chegar.
+  var WORLD = [
+    ['Lisboa', 38.72, -9.14], ['Madri', 40.42, -3.7], ['Londres', 51.5, -0.12], ['Nova York', 40.71, -74.0],
+    ['Miami', 25.76, -80.19], ['Cidade do México', 19.43, -99.13], ['Bogotá', 4.71, -74.07], ['Lima', -12.05, -77.04],
+    ['Santiago', -33.45, -70.67], ['Buenos Aires', -34.6, -58.38], ['Luanda', -8.84, 13.23], ['Lagos', 6.52, 3.38],
+    ['Cidade do Cabo', -33.92, 18.42]
+  ];
+  WORLD.forEach(function (c) {
+    var n = Object.assign(fromLatLon(c[1], c[2]), { name: c[0], ring: 0, intl: true });
+    nodes.push(n);
+    var br = nodes[Math.floor(rnd() * CITIES.length)];
+    var out = rnd() > 0.5;                                  // sai do Brasil ou chega nele
+    var A = out ? br : n, B = out ? n : br;
+    var dot = A.x * B.x + A.y * B.y + A.z * B.z;
+    var ang = Math.acos(Math.max(-1, Math.min(1, dot)));
+    arcs.push({ a: A, b: B, ang: ang, alt: Math.min(0.32, 0.04 + ang * 0.3), t: 0, speed: 0.12 + rnd() * 0.06,
+                wait: 1.5 + rnd() * 16, intl: true });
+  });
+
   // ponto do arco (interpolação esférica + altura)
   function arcPoint(arc, t) {
     var s = Math.sin(arc.ang);
@@ -211,13 +231,22 @@
     var STEPS = 40;
     for (var a = 0; a < arcs.length; a++) {
       var arc = arcs[a];
-      if (arc.wait > 0) arc.wait -= dt * speed;
+      if (arc.wait > 0) {
+        arc.wait -= dt * speed;
+        if (arc.wait <= 0 && arc.intl) {
+          // no máximo duas conexões internacionais ao mesmo tempo
+          var active = 0;
+          for (var q2 = 0; q2 < arcs.length; q2++) if (arcs[q2].intl && arcs[q2] !== arc && arcs[q2].wait <= 0) active++;
+          if (active >= 2) arc.wait = 1 + Math.random() * 3; else arc.a.ring = 1;
+        }
+      }
       else {
         arc.t += dt * arc.speed * speed;
-        if (arc.t >= 1.25) { arc.t = 0; arc.wait = 0.3 + Math.random() * 1.2; arc.b.ring = 1; }
+        if (arc.t >= 1.25) { arc.t = 0; arc.wait = arc.intl ? 8 + Math.random() * 14 : 0.3 + Math.random() * 1.2; arc.b.ring = 1; }
       }
 
-      // trilho do arco (bem fraco)
+      // trilho do arco (bem fraco); os internacionais só aparecem enquanto estão ativos
+      if (!arc.intl || arc.wait <= 0) {
       var prev = null;
       ctx.lineWidth = 1;
       for (var s2 = 0; s2 <= STEPS; s2++) {
@@ -228,6 +257,7 @@
           ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
         }
         p.ok = ok; prev = p;
+      }
       }
 
       // pulso viajando: cabeça forte, rastro que some
@@ -261,8 +291,14 @@
       if (nd.ring > 0) nd.ring -= dt * 1.1;
       if (qn.z < 0.03 || qn.y > H + 10) continue;
       var dn = Math.min(1, qn.z * 1.8);
-      ctx.fillStyle = 'rgba(' + LIME + ',' + (0.45 + dn * 0.55).toFixed(3) + ')';
-      ctx.beginPath(); ctx.arc(qn.x, qn.y, 1.6 + dn * 1.3, 0, Math.PI * 2); ctx.fill();
+      if (nd.intl) {
+        var glow = Math.max(0, nd.ring);
+        ctx.fillStyle = 'rgba(' + MIST + ',' + ((0.35 + glow * 0.6) * dn).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(qn.x, qn.y, 1.3 + dn + glow * 1.2, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.fillStyle = 'rgba(' + LIME + ',' + (0.45 + dn * 0.55).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(qn.x, qn.y, 1.6 + dn * 1.3, 0, Math.PI * 2); ctx.fill();
+      }
       if (nd.ring > 0) {
         var rr = (1 - nd.ring) * 16 + 3;
         ctx.strokeStyle = 'rgba(' + LIME + ',' + (nd.ring * 0.7 * dn).toFixed(3) + ')';

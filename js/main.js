@@ -225,40 +225,27 @@
     }, { threshold: 0.2 }).observe(motion);
   }
 
-  // Paralaxe da foto do Próximo passo: fundo e pessoa andam em ritmos diferentes
-  // com a rolagem, e no desktop também acompanham o mouse
+  // Foto do Próximo passo: com o mouse em cima, a imagem se mexe de leve
   var px = document.getElementById('parallax');
-  if (px && !reduced) {
-    var cur = { s: 0, mx: 0, my: 0 }, tgt = { s: 0, mx: 0, my: 0 }, pxRaf = null, pxOn = false;
-    function pxRead() {
-      var r = px.getBoundingClientRect();
-      var c = r.top + r.height / 2 - window.innerHeight / 2;
-      tgt.s = Math.max(-1, Math.min(1, c / (window.innerHeight / 2 + r.height / 2)));
-    }
+  if (px && !reduced && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    var cur = { x: 0, y: 0, s: 1 }, tgt = { x: 0, y: 0, s: 1 }, pxRaf = null;
     function pxTick() {
-      pxRead();
       var still = true;
-      for (var k in cur) { cur[k] += (tgt[k] - cur[k]) * 0.1; if (Math.abs(tgt[k] - cur[k]) > 0.001) still = false; }
-      var h = px.offsetHeight;
-      px.style.setProperty('--by', (cur.s * h * 0.05 - cur.my * 8).toFixed(2) + 'px');
-      px.style.setProperty('--bx', (-cur.mx * 10).toFixed(2) + 'px');
-      px.style.setProperty('--fy', (-cur.s * h * 0.035 + cur.my * 10).toFixed(2) + 'px');
-      px.style.setProperty('--fx', (cur.mx * 16).toFixed(2) + 'px');
-      pxRaf = (pxOn || !still) ? requestAnimationFrame(pxTick) : null;
+      for (var k in cur) { cur[k] += (tgt[k] - cur[k]) * 0.08; if (Math.abs(tgt[k] - cur[k]) > 0.001) still = false; }
+      px.style.setProperty('--x', cur.x.toFixed(2) + 'px');
+      px.style.setProperty('--y', cur.y.toFixed(2) + 'px');
+      px.style.setProperty('--s', cur.s.toFixed(4));
+      pxRaf = still ? null : requestAnimationFrame(pxTick);
     }
-    function pxStart() { if (!pxRaf) pxRaf = requestAnimationFrame(pxTick); }
-    if ('IntersectionObserver' in window) {
-      new IntersectionObserver(function (e) { pxOn = e[0].isIntersecting; if (pxOn) pxStart(); }).observe(px);
-    }
-    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
-      px.addEventListener('mousemove', function (e) {
-        var r = px.getBoundingClientRect();
-        tgt.mx = (e.clientX - r.left) / r.width - 0.5;
-        tgt.my = (e.clientY - r.top) / r.height - 0.5;
-        pxStart();
-      });
-      px.addEventListener('mouseleave', function () { tgt.mx = 0; tgt.my = 0; pxStart(); });
-    }
+    function pxGo() { if (!pxRaf) pxRaf = requestAnimationFrame(pxTick); }
+    px.addEventListener('mousemove', function (e) {
+      var r = px.getBoundingClientRect();
+      tgt.x = -((e.clientX - r.left) / r.width - 0.5) * 18;
+      tgt.y = -((e.clientY - r.top) / r.height - 0.5) * 14;
+      tgt.s = 1.05;
+      pxGo();
+    });
+    px.addEventListener('mouseleave', function () { tgt.x = 0; tgt.y = 0; tgt.s = 1; pxGo(); });
   }
 
   // Ano do rodapé

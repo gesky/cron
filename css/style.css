@@ -691,16 +691,13 @@ details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
 .final { background: var(--lime); padding: 120px 0; }
 .final__grid { display: grid; grid-template-columns: 1fr 1.05fr; gap: 72px; align-items: center; }
 .final__media { position: relative; margin: 0; border-radius: calc(var(--radius) + 6px); overflow: hidden; aspect-ratio: 4 / 4.4; background: var(--ink-12); isolation: isolate; }
-/* paralaxe: fundo e pessoa em camadas do mesmo tamanho, maiores que a moldura
-   para as bordas nunca aparecerem quando elas se movem */
-.px-layer {
-  position: absolute; inset: -7%; width: 114%; height: 114%;
+/* movimento sutil seguindo o mouse (desktop) */
+.px-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; object-position: 55% 30%; display: block;
-  transform: translate3d(var(--x, 0px), var(--y, 0px), 0);
+  transform: translate3d(var(--x, 0px), var(--y, 0px), 0) scale(var(--s, 1));
   will-change: transform;
 }
-.px-bg { --x: var(--bx, 0px); --y: var(--by, 0px); }
-.px-fg { --x: var(--fx, 0px); --y: var(--fy, 0px); filter: drop-shadow(0 18px 30px rgba(26, 26, 26, .18)); }
 .final__inner { max-width: 560px; }
 .final h2 { font-size: clamp(2.2rem, 4.2vw, 3.4rem); margin-bottom: 20px; }
 .final p { font-size: 1.12rem; color: var(--ink-70); max-width: 46ch; margin: 0 0 40px; }
