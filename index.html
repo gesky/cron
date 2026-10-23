@@ -21,6 +21,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/motion.css">
   <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
@@ -293,8 +294,55 @@
           <a href="#" class="btn btn--primary" data-cta="painel">Quero ver o painel funcionando <span class="arrow">→</span></a>
         </div>
 
-        <div class="ph ph--dark ph--painel reveal" role="img" aria-label="Espaço para imagem">
-          <span class="ph__label">Vídeo curto do painel<br><small>editar, publicar, ver no site</small></span>
+        <!-- Animação do painel: editar um projeto e ver o site mudar (loop de 10s) -->
+        <div class="motion reveal" id="motion" role="img" aria-label="Animação do painel da Cron: um projeto é editado, a imagem é enviada, o projeto é publicado e o site atualiza na hora">
+          <div class="mo-scene">
+
+            <!-- Janela do painel -->
+            <div class="mo-admin mo-layer">
+              <div class="mo-admin__side">
+                <span class="mo-logo"></span>
+                <i class="is-on"></i><i></i><i></i>
+                <span class="mo-badge"><b class="mo-badge__a">2</b><b class="mo-badge__b">3</b></span>
+              </div>
+              <div class="mo-admin__main">
+                <div class="mo-top"><b>Projetos no ar</b><span class="mo-new">+ Novo</span></div>
+                <div class="mo-row"><span class="mo-thumb mo-thumb--a"></span><span class="mo-lines"><i></i><i></i></span><span class="mo-pill">No ar</span><span class="mo-edit">Editar</span></div>
+                <div class="mo-row mo-row--target"><span class="mo-thumb mo-thumb--b"><em></em></span><span class="mo-lines"><i></i><i></i></span><span class="mo-pill mo-pill--draft"><b>Rascunho</b><b>No ar</b></span><span class="mo-edit">Editar</span></div>
+                <div class="mo-row"><span class="mo-thumb mo-thumb--c"></span><span class="mo-lines"><i></i><i></i></span><span class="mo-pill">No ar</span><span class="mo-edit">Editar</span></div>
+              </div>
+            </div>
+
+            <!-- Gaveta de edição -->
+            <div class="mo-drawer mo-layer">
+              <small>Projeto</small>
+              <b class="mo-drawer__title">Editar projeto</b>
+              <span class="mo-label">Título</span>
+              <span class="mo-field"><span class="mo-type">Coleção nova no ar.</span><i class="mo-caret"></i></span>
+              <span class="mo-label">Imagem</span>
+              <span class="mo-drop"><span class="mo-drop__hint">Arraste a imagem</span><span class="mo-drop__img"><em></em></span><span class="mo-chip">WebP · 312 KB</span></span>
+              <span class="mo-switch-row"><span class="mo-switch"></span>Publicado</span>
+              <span class="mo-save">Salvar projeto</span>
+            </div>
+
+            <!-- Celular com o site -->
+            <div class="mo-phone mo-layer">
+              <div class="mo-screen">
+                <span class="mo-site-top"><span class="mo-logo mo-logo--sm"></span><i></i></span>
+                <span class="mo-card">
+                  <span class="mo-card__img"><span class="mo-card__old"></span><span class="mo-card__new"><em></em></span></span>
+                  <span class="mo-card__meta">PROJETO</span>
+                  <span class="mo-card__t mo-card__t--old">Em breve.</span>
+                  <span class="mo-card__t mo-card__t--new">Coleção nova no ar.</span>
+                  <span class="mo-card__btn">Quero um assim</span>
+                </span>
+                <span class="mo-lead"><i></i><span><b>Novo lead</b>Mariana · pelo site</span></span>
+              </div>
+            </div>
+
+            <span class="mo-toast mo-layer">Projeto atualizado</span>
+            <span class="mo-cursor"><i></i></span>
+          </div>
         </div>
       </div>
     </section>

@@ -217,6 +217,14 @@
     });
   }
 
+  // Animação do painel: só roda enquanto está na tela
+  var motion = document.getElementById('motion');
+  if (motion && 'IntersectionObserver' in window && !reduced) {
+    new IntersectionObserver(function (e) {
+      motion.classList.toggle('is-playing', e[0].isIntersecting);
+    }, { threshold: 0.2 }).observe(motion);
+  }
+
   // Ano do rodapé
   var year = document.getElementById('year');
   if (year) year.textContent = new Date().getFullYear();
