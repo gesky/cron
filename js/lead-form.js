@@ -152,6 +152,11 @@
     // Antispam: campo invisível preenchido ou envio rápido demais = robô
     if (form.website.value || Date.now() - openedAt < 1500) { success(); return; }
 
+    // Anti-flood: um envio por minuto neste navegador
+    var lastSent = 0;
+    try { lastSent = +localStorage.getItem('cron_lead_at') || 0; } catch (err) {}
+    if (Date.now() - lastSent < 60000) { success(form.name.value.trim()); return; }
+
     var needEl = form.querySelector('input[name="need"]:checked');
     var lead = {
       name: form.name.value.trim().slice(0, 120),
@@ -191,6 +196,7 @@
     }
 
     send.then(function () {
+      try { localStorage.setItem('cron_lead_at', String(Date.now())); } catch (err) {}
       if (typeof window.fbq === 'function') fbq('track', 'Lead', { content_name: lead.source });
       if (typeof window.gtag === 'function') gtag('event', 'generate_lead', { lead_source: lead.source });
       success(lead.name);

@@ -7,6 +7,13 @@
 (function () {
   'use strict';
 
+  // Anti-clickjacking: o painel nunca roda dentro de um iframe de outro site
+  if (window.top !== window.self) {
+    document.documentElement.innerHTML = '';
+    try { window.top.location = window.self.location.href; } catch (e) {}
+    return;
+  }
+
   var C = window.CRON || {};
   var MIN = C.MIN_PROJECTS || 1;
   var MAX = C.MAX_PROJECTS || 4;
@@ -214,7 +221,9 @@
     var pass = loginForm.password.value;
     if (!email || !pass) { loginMsg.textContent = 'Preencha e-mail e senha.'; return; }
     $('#loginBtn').disabled = true;
-    C.auth.signInWithEmailAndPassword(email, pass).catch(function (err) {
+    // sessão some ao fechar o navegador
+    C.auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+      .then(function () { return C.auth.signInWithEmailAndPassword(email, pass); }).catch(function (err) {
       var code = err && err.code || '';
       loginMsg.textContent = /too-many/.test(code) ? 'Muitas tentativas. Aguarde alguns minutos.'
         : 'E-mail ou senha incorretos.';
@@ -246,8 +255,20 @@
   var started = false;
   var unsubLeads = null;
 
+  // Sai sozinho depois de 45 min sem uso
+  var idleTimer = null;
+  function resetIdle() {
+    if (demo || !started) return;
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { C.auth.signOut(); toast('Sessão encerrada por inatividade.'); }, 45 * 60 * 1000);
+  }
+  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(function (ev) {
+    window.addEventListener(ev, resetIdle, { passive: true });
+  });
+
   function startApp() {
     showView('view-app');
+    setTimeout(resetIdle, 0);
     if (started) return;
     started = true;
     var saved = '';

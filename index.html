@@ -3,26 +3,213 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Cron Web Studio | Sites e sistemas sob medida</title>
-  <meta name="description" content="A Cron cria sites e sistemas sob medida que trabalham pela sua operação. Marca, site e painel de controle no mesmo projeto.">
-  <meta name="theme-color" content="#1a1a1a">
 
+  <!-- Segurança: só carrega scripts, fontes e conexões das origens liberadas aqui -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https://www.google.com; connect-src 'self' https://*.googleapis.com https://www.google.com; frame-src https://www.google.com https://recaptcha.google.com https://cron-91280.firebaseapp.com; object-src 'none'; base-uri 'self'; form-action 'self'; manifest-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+
+  <title>Cron Web Studio | Criação de sites e sistemas sob medida</title>
+  <meta name="description" content="Criação de sites e sistemas web sob medida, com painel próprio para você atualizar tudo sem depender de agência. Design e desenvolvimento para empresas de todo o Brasil.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <link rel="canonical" href="https://cronwebstudio.com.br/">
+  <meta name="author" content="Cron Web Studio">
+  <meta name="theme-color" content="#1a1a1a">
+  <meta name="format-detection" content="telephone=no">
+
+  <!-- Compartilhamento (WhatsApp, LinkedIn, Facebook, X) -->
   <meta property="og:type" content="website">
   <meta property="og:locale" content="pt_BR">
   <meta property="og:site_name" content="Cron Web Studio">
-  <meta property="og:title" content="Cron Web Studio | Sites e sistemas sob medida">
-  <meta property="og:description" content="A empresa é sua. O controle também. Sites e sistemas com painel próprio.">
+  <meta property="og:title" content="Cron Web Studio | Criação de sites e sistemas sob medida">
+  <meta property="og:description" content="A empresa é sua. O controle também. Sites e sistemas sob medida, com painel próprio para você atualizar tudo.">
   <meta property="og:url" content="https://cronwebstudio.com.br/">
-  <meta property="og:image" content="https://cronwebstudio.com.br/img/og-image.png">
+  <meta property="og:image" content="https://cronwebstudio.com.br/img/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Cron Web Studio: a empresa é sua, o controle também.">
   <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Cron Web Studio | Criação de sites e sistemas sob medida">
+  <meta name="twitter:description" content="Sites e sistemas sob medida, com painel próprio para você atualizar tudo.">
+  <meta name="twitter:image" content="https://cronwebstudio.com.br/img/og-image.jpg">
 
-  <link rel="icon" href="img/cron-icon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Ícones -->
+  <link rel="icon" href="img/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="img/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preload" href="fonts/sora-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/sora-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/motion.css">
-  <script>document.documentElement.classList.add("js")</script>
+  <script src="js/early.js"></script>
+
+  <!-- Dados estruturados para o Google entender quem é a Cron e o que ela faz -->
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://cronwebstudio.com.br/#organizacao",
+      "name": "Cron Web Studio",
+      "alternateName": "Cron",
+      "url": "https://cronwebstudio.com.br/",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://cronwebstudio.com.br/img/icon-512.png",
+        "width": 512,
+        "height": 512
+      },
+      "image": "https://cronwebstudio.com.br/img/og-image.jpg",
+      "email": "contato@cronwebstudio.com.br",
+      "description": "Estúdio de criação de sites e sistemas web sob medida, com painel administrativo próprio para o cliente atualizar tudo sem depender de agência.",
+      "areaServed": {
+        "@type": "Country",
+        "name": "Brasil"
+      },
+      "knowsAbout": [
+        "Criação de sites",
+        "Desenvolvimento web",
+        "Site institucional",
+        "Sistemas web",
+        "Painel administrativo",
+        "Web design",
+        "Design de marca",
+        "SEO técnico",
+        "Landing page"
+      ],
+      "sameAs": [
+        "https://www.instagram.com/cronwebstudio/"
+      ],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer service",
+        "email": "contato@cronwebstudio.com.br",
+        "areaServed": "BR",
+        "availableLanguage": [
+          "pt-BR"
+        ]
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://cronwebstudio.com.br/#site",
+      "url": "https://cronwebstudio.com.br/",
+      "name": "Cron Web Studio",
+      "inLanguage": "pt-BR",
+      "publisher": {
+        "@id": "https://cronwebstudio.com.br/#organizacao"
+      }
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://cronwebstudio.com.br/#pagina",
+      "url": "https://cronwebstudio.com.br/",
+      "name": "Cron Web Studio | Criação de sites e sistemas sob medida",
+      "isPartOf": {
+        "@id": "https://cronwebstudio.com.br/#site"
+      },
+      "about": {
+        "@id": "https://cronwebstudio.com.br/#organizacao"
+      },
+      "inLanguage": "pt-BR",
+      "primaryImageOfPage": "https://cronwebstudio.com.br/img/og-image.jpg"
+    },
+    {
+      "@type": "Service",
+      "@id": "https://cronwebstudio.com.br/#site-institucional",
+      "name": "Criação de site institucional",
+      "serviceType": "Criação de sites",
+      "provider": {
+        "@id": "https://cronwebstudio.com.br/#organizacao"
+      },
+      "areaServed": {
+        "@type": "Country",
+        "name": "Brasil"
+      },
+      "description": "Site institucional com design sob medida, responsivo, rápido no celular, SEO técnico e painel para a própria empresa editar o conteúdo."
+    },
+    {
+      "@type": "Service",
+      "@id": "https://cronwebstudio.com.br/#site-sistema",
+      "name": "Site com sistema web e painel administrativo",
+      "serviceType": "Desenvolvimento de sistemas web",
+      "provider": {
+        "@id": "https://cronwebstudio.com.br/#organizacao"
+      },
+      "areaServed": {
+        "@type": "Country",
+        "name": "Brasil"
+      },
+      "description": "Site com sistema sob medida: catálogos, cadastros, estoques, níveis de acesso, automações, relatórios e PDFs, com evolução contínua."
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://cronwebstudio.com.br/#duvidas",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Quanto custa um projeto?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Depende do que sua operação precisa. Depois da primeira conversa, você recebe uma proposta fechada, com escopo, prazo e valor definidos. Sem cobrança surpresa no meio do caminho."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Quanto tempo leva?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sites institucionais são mais rápidos. Projetos com sistema são planejados em etapas, com entregas que você acompanha. O prazo exato entra na proposta."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Vou conseguir atualizar o site sozinho?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim. Todo projeto sai com um painel feito para a sua rotina, e você recebe treinamento para usar. Trocar foto ou publicar novidade não vira chamado."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Já tenho um site. Dá para refazer?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Dá. Avaliamos o que já existe, mantemos o que funciona e reconstruímos o que trava a sua operação."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Vocês cuidam de domínio e hospedagem?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim. Configuramos tudo para o site ir ao ar sem você precisar entender de servidor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "E depois que o site estiver no ar?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A Cron continua por perto. Suporte, ajustes e novas funcionalidades conforme a empresa cresce."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Atendem empresas de outras cidades?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sim. O atendimento é remoto para todo o Brasil, com reuniões online e conversa direta pelo WhatsApp."
+          }
+        }
+      ]
+    }
+  ]
+}
+  </script>
 </head>
 <body>
 
@@ -39,66 +226,14 @@
       <div class="intro__shadow"></div>
     </div>
   </div>
-  <script>
-    (function () {
-      var root = document.documentElement, intro = document.getElementById('intro');
-      var seen = false, reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      try { seen = sessionStorage.getItem('cron_intro') === '1'; } catch (e) {}
-      if (/[?&]intro\b/.test(location.search)) seen = false; // ?intro força a abertura (pra testar)
-      if (seen || reduced) { intro.remove(); return; }
-      try { sessionStorage.setItem('cron_intro', '1'); } catch (e) {}
-      root.classList.add('is-intro');
-      // Padrão: fundo escuro com giro. ?intro=queda mostra a versão da queda com luz verde
-      var spin = !/[?&]intro=queda\b/.test(location.search);
-      intro.classList.add(spin ? 'intro--spin' : 'intro--drop');
-      // camadas empilhadas em profundidade = espessura 3D do ícone
-      var P = 'M195.9,111.98c26.43-39.36,38.58-79.98,17.4-101.17S151.47,1.78,112.1,28.23C72.74,1.78,32.11-10.38,10.92,10.81-10.27,31.99,1.88,72.62,28.31,111.98,1.81,151.38-10.4,192.08,10.81,213.29c21.21,21.21,61.9,9.01,101.29-17.48,39.39,26.49,80.09,38.69,101.29,17.48,21.21-21.21,9-61.91-17.5-101.31ZM28.19,28.08c7.53-7.53,30.91-3.58,60.33,13.95,1.32.79,1.46,2.65.27,3.63-4.84,3.99-9.58,8.15-14.2,12.45-.92.86-.94,2.32-.05,3.21l14.13,14.13c.84.84,2.21.86,3.08.04,4.49-4.18,8.95-8.08,13.36-11.72,4.05-3.35,9.95-3.35,14,0,4.41,3.64,8.87,7.54,13.36,11.72.87.81,2.24.8,3.08-.04l14.13-14.13c.89-.89.87-2.35-.05-3.21-4.62-4.29-9.37-8.45-14.2-12.45-1.19-.98-1.05-2.85.27-3.63,29.42-17.54,52.8-21.48,60.33-13.95,7.53,7.53,3.59,30.91-13.93,60.33-.79,1.32-2.65,1.46-3.63.27-3.97-4.8-8.1-9.51-12.36-14.09-.86-.92-2.32-.94-3.21-.05l-14.13,14.13c-.84.84-.86,2.21-.04,3.08,4.14,4.45,8.01,8.87,11.63,13.25,3.36,4.06,3.35,9.96,0,14.03-5.87,7.1-12.42,14.35-19.7,21.62-7.24,7.24-14.45,13.77-21.53,19.62-4.06,3.36-9.95,3.36-14.01,0-7.07-5.85-14.28-12.38-21.53-19.62-7.27-7.27-13.83-14.51-19.7-21.62-3.36-4.06-3.36-9.96,0-14.03,3.61-4.37,7.48-8.8,11.63-13.25.81-.87.8-2.24-.04-3.08l-14.13-14.13c-.89-.89-2.35-.87-3.21.05-4.26,4.58-8.39,9.29-12.36,14.09-.98,1.19-2.85,1.05-3.63-.27-17.53-29.42-21.46-52.8-13.93-60.33ZM28.08,196.02c-7.54-7.54-3.57-30.98,14.03-60.46.79-1.32,2.66-1.45,3.64-.27,6.46,7.83,13.36,15.43,20.55,22.62,7.15,7.15,14.72,14.02,22.51,20.46,1.19.98,1.05,2.85-.27,3.64-29.48,17.59-52.92,21.55-60.45,14.01ZM196.13,196.02c-7.54,7.54-30.98,3.58-60.45-14.01-1.32-.79-1.45-2.66-.27-3.64,7.79-6.44,15.35-13.31,22.51-20.46,7.19-7.19,14.09-14.79,20.55-22.62.98-1.19,2.85-1.05,3.64.27,17.6,29.48,21.57,52.92,14.03,60.46Z', coin = document.getElementById('introCoin'), N = 31, html = '';
-      // Volume em forma de tubo: fatias empilhadas em profundidade (z), cada uma
-      // afinada (erode) conforme o perfil de um círculo. Frente e fundo ficam
-      // estreitos, o meio fica na largura total. A cor clareia nas fatias que
-      // olham para a frente e escurece nas laterais, dando o sombreado redondo.
-      var R = 4.6, S = 224.21 / 120, defs = '';
-      function mix(a, b, t) {
-        var o = '#';
-        for (var c = 1; c < 7; c += 2) {
-          var v = Math.round(parseInt(a.substr(c, 2), 16) * (1 - t) + parseInt(b.substr(c, 2), 16) * t);
-          o += ('0' + v.toString(16)).slice(-2);
-        }
-        return o;
-      }
-      for (var i = 0; i < N; i++) {
-        var th = Math.PI * (N - 1 - i) / (N - 1);   // de trás (pi) para a frente (0)
-        var z = R * 1.3 * Math.cos(th);              // perfil um pouco mais fundo que largo
-        var zc = R * Math.cos(th);
-        var er = (R - Math.sqrt(Math.max(0, R * R - zc * zc))) * S * 0.92;
-        var n = zc / R;                              // -1 fundo, 0 lateral, 1 frente
-        // cor única da marca: lime na face, escurecendo só na curva das laterais
-        // e a luz vem de cima/esquerda: as fatias da frente deslocam um pouco
-        // nessa direção, deixando a sombra embaixo/direita do tubo
-        var col = n < 0 ? mix('#4a6400', '#253300', -n)
-                : mix('#4a6400', '#c6ff02', Math.min(1, Math.pow(n, 1.5) * 1.15));
-        var sh = n > 0 ? (-n * 1.6).toFixed(2) + 'px' : '0px';
-        var f = '';
-        if (er > 0.05) { defs += '<filter id="ie' + i + '" x="-5%" y="-5%" width="110%" height="110%"><feMorphology operator="erode" radius="' + er.toFixed(2) + '"/></filter>'; f = ' filter="url(#ie' + i + ')"'; }
-        html += '<svg class="intro__layer" style="--z:' + z.toFixed(2) + 'px;--s:' + sh + '" viewBox="0 0 224.21 224.1"><path d="' + P + '" fill="' + col + '"' + f + '/></svg>';
-      }
-      html = '<svg width="0" height="0" style="position:absolute"><defs>' + defs + '</defs></svg>' + html;
-      coin.innerHTML = html;
-      setTimeout(function () {
-        intro.classList.add('is-out');
-        root.classList.remove('is-intro');
-        document.dispatchEvent(new Event('cron:intro-end'));
-        setTimeout(function () { intro.remove(); }, 800);
-      }, spin ? 2050 : 1600);
-    })();
-  </script>
+  <script src="js/intro.js"></script>
 
   <!-- ============ HEADER ============ -->
   <header class="header" id="header">
     <div class="header__inner">
       <a href="#topo" class="header__logo" aria-label="Cron Web Studio, voltar ao topo">
-        <img src="img/logo-cron.png" alt="Cron Web Studio" class="logo-img logo-img--dark" data-fallback="Cron">
-        <img src="img/logo-cron-claro.png" alt="" aria-hidden="true" class="logo-img logo-img--onDark">
+        <img src="img/logo-cron.png" alt="Cron Web Studio" width="1254" height="226" class="logo-img logo-img--dark" data-fallback="Cron">
+        <img src="img/logo-cron-claro.png" alt="" aria-hidden="true" width="1254" height="226" class="logo-img logo-img--onDark">
       </a>
 
       <nav class="nav" id="nav" aria-label="Navegação principal">
@@ -123,7 +258,7 @@
     <section class="hero">
       <div class="container hero__grid">
         <div class="hero__copy">
-          <p class="eyebrow reveal"><span class="dot"></span>Sites e sistemas sob medida</p>
+          <p class="eyebrow reveal"><span class="dot"></span>Criação de sites e sistemas sob medida</p>
           <h1 class="reveal">A empresa é sua. <span class="mark">O controle também.</span></h1>
           <p class="lead reveal">A Cron cria sites e sistemas que trabalham pela sua operação. Marca, site e painel de controle no mesmo projeto, feitos por quem desenha e programa.</p>
 
@@ -455,8 +590,8 @@
   <footer class="footer">
     <div class="container footer__grid">
       <div class="footer__brand">
-        <img src="img/logo-cron-claro.png" alt="Cron Web Studio" class="logo-img logo-img--light" data-fallback="Cron">
-        <p>Sites e sistemas sob medida. Do primeiro rascunho à operação rodando.</p>
+        <img src="img/logo-cron-claro.png" alt="Cron Web Studio" width="1254" height="226" loading="lazy" class="logo-img logo-img--light" data-fallback="Cron">
+        <p>Criação de sites, sistemas web e painéis administrativos sob medida. Design e desenvolvimento no mesmo estúdio, do primeiro rascunho à operação rodando.</p>
       </div>
 
       <div class="footer__col">
@@ -565,11 +700,12 @@
   </div>
 
   <!-- Rolagem suave (Lenis), carrega antes do main.js que a inicializa -->
-  <script src="https://cdn.jsdelivr.net/npm/lenis@1/dist/lenis.min.js"></script>
+  <script src="js/vendor/lenis.min.js"></script>
 
   <!-- Firebase (projetos + leads) -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="js/vendor/firebase-app-compat.js"></script>
+  <script src="js/vendor/firebase-app-check-compat.js"></script>
+  <script src="js/vendor/firebase-firestore-compat.js"></script>
   <script src="js/firebase-config.js"></script>
 
   <script src="js/main.js"></script>

@@ -12,12 +12,20 @@ window.CRON = (function () {
     appId: "1:421142538286:web:358161b84cfce251c497bf"
   };
 
+  // App Check (opcional, recomendado): chave de site do reCAPTCHA v3.
+  // Com ela, o Firestore só aceita pedidos vindos do seu site (bloqueia robôs
+  // que tentem gravar leads direto pela API). Veja o passo a passo no SETUP.md.
+  var appCheckSiteKey = "";
+
   var configured = !!config.apiKey && config.apiKey.indexOf("COLE") !== 0;
   var app = null, db = null, auth = null;
 
   if (configured && window.firebase) {
     try {
       app = firebase.apps.length ? firebase.app() : firebase.initializeApp(config);
+      if (appCheckSiteKey && firebase.appCheck) {
+        firebase.appCheck().activate(new firebase.appCheck.ReCaptchaV3Provider(appCheckSiteKey), true);
+      }
       db = firebase.firestore();
       if (firebase.auth) auth = firebase.auth();
     } catch (e) {

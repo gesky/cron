@@ -1,10 +1,13 @@
 rules_version = '2';
 
 // Cron Web Studio · Regras do Firestore
-// - projects: leitura pública só dos publicados; escrita só do admin
-// - leads: qualquer visitante pode CRIAR (com consentimento LGPD e campos validados);
-//          só o admin lê, edita e exclui
-// - admins: um documento com o UID do admin libera o painel (criado à mão no console)
+// Princípio: tudo fechado por padrão; cada coleção libera só o mínimo necessário.
+//
+// - projects: visitante lê só os publicados; admin cria/edita/exclui com campos validados
+// - leads: visitante só CRIA (campos validados + consentimento LGPD); só o admin lê,
+//          e o admin só pode mudar status e anotações
+// - admins: cada documento com o UID libera o painel (criado à mão no console)
+// - qualquer outra coleção: bloqueada
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -14,19 +17,52 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // ---------------- Admins ----------------
     match /admins/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false;
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, write: if false;
     }
 
+    // ---------------- Projetos ----------------
     match /projects/{id} {
-      allow read: if isAdmin() || resource.data.published == true;
-      allow create, update, delete: if isAdmin();
+      allow get, list: if resource.data.published == true || isAdmin();
+      allow create, update: if isAdmin() && validProject(request.resource.data);
+      allow delete: if isAdmin();
     }
 
+    function str(v, max) { return v is string && v.size() <= max; }
+
+    function validProject(d) {
+      return d.keys().hasOnly([
+          'client', 'segment', 'title', 'description', 'quote', 'tags',
+          'ctaLabel', 'siteLabel', 'siteUrl', 'image', 'imageAlt',
+          'published', 'order', 'createdAt', 'updatedAt'
+        ])
+        && str(d.client, 60) && d.client.size() >= 2
+        && str(d.title, 120) && d.title.size() >= 2
+        && str(d.segment, 60)
+        && str(d.description, 600)
+        && d.quote is map && d.quote.keys().hasOnly(['text', 'author'])
+        && str(d.quote.text, 300) && str(d.quote.author, 80)
+        && d.tags is list && d.tags.size() <= 6
+        && str(d.ctaLabel, 40) && str(d.siteLabel, 40)
+        && str(d.siteUrl, 300) && (d.siteUrl == '' || d.siteUrl.matches('^https?://.+'))
+        && str(d.imageAlt, 160)
+        && d.image is string && d.image.size() <= 900000
+        && (d.image == '' || d.image.matches('^data:image/(webp|png|jpeg);base64,.+'))
+        && d.published is bool
+        && d.order is int && d.order >= 0 && d.order <= 10;
+    }
+
+    // ---------------- Leads ----------------
     match /leads/{id} {
       allow create: if validLead(request.resource.data);
-      allow read, update, delete: if isAdmin();
+      allow get, list: if isAdmin();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])
+        && request.resource.data.status in ['novo', 'contato', 'proposta', 'fechado', 'perdido']
+        && str(request.resource.data.notes, 5000);
+      allow delete: if isAdmin();
     }
 
     function validLead(d) {
@@ -36,24 +72,32 @@ service cloud.firestore {
           'consent', 'consentText', 'consentAt',
           'createdAt', 'status', 'notes', 'page', 'referrer', 'utm'
         ])
-        && d.name is string && d.name.size() >= 2 && d.name.size() <= 120
-        && d.whatsapp is string && d.whatsapp.size() >= 10 && d.whatsapp.size() <= 15
-        && d.email is string && d.email.size() <= 160
-        && d.company is string && d.company.size() <= 120
-        && d.need is string && d.need.size() <= 40
-        && d.message is string && d.message.size() <= 2000
-        && d.source is string && d.source.size() <= 80
-        && d.sourceLabel is string && d.sourceLabel.size() <= 120
-        && d.project is string && d.project.size() <= 120
+        && str(d.name, 120) && d.name.size() >= 2
+        && d.whatsapp is string && d.whatsapp.matches('^[0-9]{10,13}$')
+        && str(d.email, 160) && (d.email == '' || d.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'))
+        && str(d.company, 120)
+        && d.need in ['', 'institucional', 'sistema', 'nao-sei']
+        && str(d.message, 2000)
+        && str(d.source, 80) && str(d.sourceLabel, 120) && str(d.project, 120)
         && d.consent == true
-        && d.consentText is string && d.consentText.size() <= 600
+        && str(d.consentText, 600)
         && d.consentAt == request.time
         && d.createdAt == request.time
         && d.status == 'novo'
         && d.notes == ''
-        && d.page is string && d.page.size() <= 500
-        && d.referrer is string && d.referrer.size() <= 500
-        && d.utm is map;
+        && str(d.page, 500) && str(d.referrer, 500)
+        && d.utm is map && d.utm.size() <= 5
+        && d.utm.keys().hasOnly(['source', 'medium', 'campaign', 'content', 'term'])
+        && (!('source' in d.utm) || str(d.utm.source, 120))
+        && (!('medium' in d.utm) || str(d.utm.medium, 120))
+        && (!('campaign' in d.utm) || str(d.utm.campaign, 120))
+        && (!('content' in d.utm) || str(d.utm.content, 120))
+        && (!('term' in d.utm) || str(d.utm.term, 120));
+    }
+
+    // ---------------- Todo o resto: fechado ----------------
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

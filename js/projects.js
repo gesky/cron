@@ -13,11 +13,19 @@
     });
   }
 
+  // Só aceita links http/https (bloqueia javascript:, data: e afins)
   function safeUrl(url) {
     url = String(url || '').trim();
     if (!url) return '';
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
-    return url;
+    try {
+      var u = new URL(url);
+      return (u.protocol === 'https:' || u.protocol === 'http:') ? u.href : '';
+    } catch (e) { return ''; }
+  }
+  // Imagem só se for WebP/PNG/JPEG embutido (o formato que o painel gera)
+  function safeImg(src) {
+    return /^data:image\/(webp|png|jpe?g);base64,[A-Za-z0-9+/=]+$/.test(String(src || '')) ? src : '';
   }
 
   function slug(str) {
@@ -27,8 +35,9 @@
   }
 
   function render(p, i) {
-    var media = p.image
-      ? '<div class="case__media"><img src="' + esc(p.image) + '" alt="' + esc(p.imageAlt || p.title) + '" loading="lazy" decoding="async"></div>'
+    var img = safeImg(p.image);
+    var media = img
+      ? '<div class="case__media"><img src="' + esc(img) + '" alt="' + esc(p.imageAlt || p.title) + '" loading="lazy" decoding="async"></div>'
       : '<div class="ph ph--case" role="img" aria-label="Espaço para imagem"><span class="ph__label">Imagem do projeto</span></div>';
 
     var meta = [p.client, p.segment].filter(Boolean).map(esc).join(' · ');

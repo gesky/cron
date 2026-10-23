@@ -1,0 +1,5 @@
+# Cron Web Studio
+User-agent: *
+Allow: /
+
+Sitemap: https://cronwebstudio.com.br/sitemap.xml
