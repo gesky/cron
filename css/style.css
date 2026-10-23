@@ -379,7 +379,7 @@ strong { font-weight: 600; }
 
 .log {
   position: absolute;
-  left: -32px;
+  right: -32px;
   bottom: 36px;
   width: min(300px, 80%);
   background: var(--ink);
@@ -569,7 +569,11 @@ strong { font-weight: 600; }
 
 .plans { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
+.plans { perspective: 1400px; }
 .plan {
+  position: relative;
+  rotate: var(--rx, 0) var(--ry, 1) 0 var(--ra, 0deg);
+  background-image: radial-gradient(340px circle at var(--mx, 50%) var(--my, 50%), rgba(198, 255, 2, calc(var(--l, 0) * .32)), transparent 65%);
   padding: 48px 40px;
   border-radius: calc(var(--radius) + 6px);
   border: 1px solid var(--ink-12);
@@ -588,7 +592,8 @@ strong { font-weight: 600; }
 .plan .checks { grid-template-columns: 1fr; margin: 32px 0 40px; }
 .plan .btn { margin-top: auto; align-self: flex-start; }
 
-.plan--featured { background: var(--ink); color: var(--mist); border-color: var(--ink); }
+.plan--featured { background-color: var(--ink);
+  background-image: radial-gradient(380px circle at var(--mx, 50%) var(--my, 50%), rgba(198, 255, 2, calc(var(--l, 0) * .2)), rgba(198, 255, 2, calc(var(--l, 0) * .05)) 40%, transparent 70%); color: var(--mist); border-color: var(--ink); }
 .plan--featured h3 { color: var(--paper); }
 .plan--featured > p,
 .plan--featured .plan__tag { color: var(--mist-60); }
@@ -684,10 +689,13 @@ details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
 /* ---------- CTA final ---------- */
 
 .final { background: var(--lime); padding: 120px 0; }
-.final__inner { max-width: 820px; text-align: center; margin: 0 auto; }
-.final h2 { font-size: clamp(2.2rem, 5vw, 3.6rem); margin-bottom: 20px; }
-.final p { font-size: 1.12rem; color: var(--ink-70); max-width: 46ch; margin: 0 auto 40px; }
-.final__ctas { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 24px; }
+.final__grid { display: grid; grid-template-columns: 1fr 1.05fr; gap: 72px; align-items: center; }
+.final__media { margin: 0; border-radius: calc(var(--radius) + 6px); overflow: hidden; aspect-ratio: 4 / 4.4; background: var(--ink-12); }
+.final__media img { width: 100%; height: 100%; object-fit: cover; object-position: 55% 30%; display: block; }
+.final__inner { max-width: 560px; }
+.final h2 { font-size: clamp(2.2rem, 4.2vw, 3.4rem); margin-bottom: 20px; }
+.final p { font-size: 1.12rem; color: var(--ink-70); max-width: 46ch; margin: 0 0 40px; }
+.final__ctas { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; }
 
 /* ---------- Footer ---------- */
 
@@ -759,6 +767,8 @@ details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
   .ph--case { min-height: 0; aspect-ratio: 16 / 10; }
 }
 
+@media (max-width: 1200px) and (min-width: 901px) { .log { right: -12px; } }
+
 @media (max-width: 900px) {
   :root { --header-h: 64px; }
 
@@ -801,7 +811,7 @@ details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
   .hero__grid { grid-template-columns: 1fr; gap: 48px; }
   .ph--hero { aspect-ratio: 4 / 3.4; }
   .globe { aspect-ratio: 4 / 4.9; }
-  .log { position: relative; left: auto; bottom: auto; width: auto; margin: -64px 16px 0; }
+  .log { position: relative; left: auto; right: auto; bottom: auto; width: auto; margin: -64px 16px 0; }
   .ph--hero { align-items: flex-start; padding-top: 14%; }
 
 
@@ -841,6 +851,8 @@ details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
   details p { padding-right: 0; }
 
   .final { padding: 88px 0; }
+  .final__grid { grid-template-columns: 1fr; gap: 40px; }
+  .final__media { aspect-ratio: 4 / 3.2; }
   .final .btn { width: 100%; }
 
   .footer__grid { grid-template-columns: 1fr; gap: 36px; }
@@ -1196,6 +1208,7 @@ html.has-cursor input[type="tel"], html.has-cursor textarea { cursor: text !impo
 .cursor.is-down .cursor__dot { transform: scale(.7); }
 .cursor.is-link.is-down .cursor__icon { transform: scale(.85) rotate(15deg); }
 .cursor.is-text .cursor__dot { transform: scale(.4); opacity: .6; }
+.cursor.is-light:not(.is-link) .cursor__dot { transform: scale(0); opacity: 0; }
 
 
 /* =========================================================

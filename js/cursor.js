@@ -65,6 +65,8 @@
     var isLink = !isText && !!t.closest(LINKS);
     cur.classList.toggle('is-link', isLink);
     cur.classList.toggle('is-text', isText);
+    // dentro dos cards de Formatos a bolinha some e vira a luz do próprio card
+    cur.classList.toggle('is-light', !!t.closest('.plan'));
   });
 
   // Cor do rastro (verde da marca)
@@ -81,7 +83,7 @@
     // rastro: linha que afina e some
     while (trail.length && now - trail[0].t > TRAIL_LIFE) trail.shift();
     ctx.clearRect(0, 0, innerWidth, innerHeight);
-    if (trail.length > 2 && !cur.classList.contains('is-link')) {
+    if (trail.length > 2 && !cur.classList.contains('is-link') && !cur.classList.contains('is-light')) {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       // curva suavizada: cada trecho vai do meio de um ponto ao meio do próximo

@@ -183,6 +183,40 @@
     });
   });
 
+  // Cards de Formatos: inclinam de leve e acendem uma luz onde o mouse está
+  if (!reduced && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    document.querySelectorAll('.plan').forEach(function (card) {
+      var s = { mx: 50, my: 50, l: 0, tx: 0, ty: 0 };      // estado atual
+      var t = { mx: 50, my: 50, l: 0, tx: 0, ty: 0 };      // alvo
+      var raf = null;
+      function tick() {
+        var k = 0.16, done = true;
+        for (var key in s) {
+          s[key] += (t[key] - s[key]) * k;
+          if (Math.abs(t[key] - s[key]) > 0.01) done = false;
+        }
+        // inclinação: eixo perpendicular ao deslocamento do mouse, até ~4 graus
+        var ang = Math.sqrt(s.tx * s.tx + s.ty * s.ty);
+        card.style.setProperty('--mx', s.mx.toFixed(2) + '%');
+        card.style.setProperty('--my', s.my.toFixed(2) + '%');
+        card.style.setProperty('--l', s.l.toFixed(3));
+        card.style.setProperty('--rx', ang ? (-s.ty / ang).toFixed(3) : 0);
+        card.style.setProperty('--ry', ang ? (s.tx / ang).toFixed(3) : 1);
+        card.style.setProperty('--ra', (ang * 4).toFixed(3) + 'deg');
+        raf = done ? null : requestAnimationFrame(tick);
+      }
+      function go() { if (!raf) raf = requestAnimationFrame(tick); }
+      card.addEventListener('mousemove', function (e) {
+        var r = card.getBoundingClientRect();
+        var x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+        t.mx = x * 100; t.my = y * 100; t.l = 1;
+        t.tx = x - 0.5; t.ty = y - 0.5;
+        go();
+      });
+      card.addEventListener('mouseleave', function () { t.l = 0; t.tx = 0; t.ty = 0; go(); });
+    });
+  }
+
   // Ano do rodapé
   var year = document.getElementById('year');
   if (year) year.textContent = new Date().getFullYear();

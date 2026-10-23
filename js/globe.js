@@ -18,9 +18,9 @@
 
   // Câmera apontada para o Brasil: gira até a longitude dele ficar de frente
   // e inclina até ele ficar no meio da parte visível do globo, com o norte para cima
-  var CENTER = { lat: -15, lon: -57 };   // um pouco a oeste: o Brasil fica à direita, longe do card
+  var CENTER = { lat: -10, lon: -40 };   // Brasil à esquerda, África aparecendo à direita   // um pouco a oeste: o Brasil fica à direita, longe do card
   var BASE_SPIN = (90 + CENTER.lon) * DEG;
-  var TILT = (CENTER.lat - 49) * DEG;
+  var TILT = (CENTER.lat - 42) * DEG;
 
   // lat/lon -> esfera (z invertido para o leste ficar à direita, como num mapa)
   function fromLatLon(lat, lon) {
@@ -51,7 +51,7 @@
   }
 
   // ---------- Pontos da superfície (esfera de Fibonacci, só a região visível) ----------
-  var DOTS = 140000;
+  var DOTS = 100000;
   var pts = [];
   var golden = Math.PI * (3 - Math.sqrt(5));
   var C = fromLatLon(CENTER.lat, CENTER.lon);
@@ -60,7 +60,7 @@
     var r = Math.sqrt(1 - y * y);
     var th = golden * i;
     var x = Math.cos(th) * r, z = Math.sin(th) * r;
-    if (x * C.x + y * C.y + z * C.z < 0.42) continue;      // longe demais do Brasil: nunca aparece
+    if (x * C.x + y * C.y + z * C.z < 0.05) continue;      // lado de trás do globo: nunca aparece
     var lat = Math.asin(y) / DEG, lon = Math.atan2(-z, x) / DEG;
     var land = lookup(LAND, lat, lon);
     var br = land && lookup(BR, lat, lon);
@@ -130,9 +130,9 @@
     W = rect.width; H = rect.height;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    R = W * 1.12;
+    R = W * 0.74;
     CX = W / 2;
-    CY = H * 0.34 + R;
+    CY = H * 0.16 + R;
   }
 
   // gira (spin + yaw no eixo Y), depois inclina (eixo X)
@@ -200,7 +200,7 @@
     }
     for (b = 0; b < LB; b++) {
       var lv = (b + 0.5) / LB;
-      ctx.fillStyle = 'rgba(' + MIST + ',' + (0.12 + lv * 0.38).toFixed(3) + ')';
+      ctx.fillStyle = 'rgba(' + MIST + ',' + (0.2 + lv * 0.45).toFixed(3) + ')';
       ctx.fill(land[b]);
       ctx.fillStyle = 'rgba(' + LIME + ',' + (0.22 + lv * 0.5).toFixed(3) + ')';
       ctx.fill(brz[b]);
