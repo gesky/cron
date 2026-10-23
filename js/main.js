@@ -59,11 +59,8 @@
 
   // ------------------------------------------------------------------
   // Header: vidro escuro quando passa sobre seções escuras
-  // + botão flutuante do WhatsApp aparece depois do hero
   // ------------------------------------------------------------------
   var darkZones = document.querySelectorAll('.section--dark, .footer');
-  var floatBtn = document.querySelector('.float-wa');
-  var hero = document.querySelector('.hero');
 
   function onScroll() {
     var probe = (header ? header.offsetHeight / 2 + 14 : 40);
@@ -73,9 +70,6 @@
       if (r.top <= probe && r.bottom >= probe) dark = true;
     });
     if (header) header.classList.toggle('is-dark', dark);
-    if (hero && floatBtn) {
-      floatBtn.classList.toggle('is-visible', window.scrollY > hero.offsetHeight * 0.7);
-    }
   }
   if (lenis) lenis.on('scroll', onScroll);
   window.addEventListener('scroll', onScroll, { passive: true });
