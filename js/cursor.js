@@ -28,31 +28,52 @@
   document.body.appendChild(canvas);
   document.body.appendChild(cur);
 
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   function resize() {
     canvas.width = innerWidth * dpr;
     canvas.height = innerHeight * dpr;
     canvas.style.width = innerWidth + 'px';
     canvas.style.height = innerHeight + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    box = null;
   }
-  resize();
-  window.addEventListener('resize', resize);
 
   var mouse = { x: -100, y: -100 };
   var pos = { x: -100, y: -100 };
   var trail = [];
   var visible = false;
-  var TRAIL_LIFE = 380; // ms
+  var TRAIL_LIFE = 380;      // ms (tempo real: igual em 30, 60 ou 120 quadros por segundo)
+  var box = null;            // área desenhada no quadro anterior (limpa só ela)
+  var running = false, last = 0;
 
-  window.addEventListener('mousemove', function (e) {
+  resize();
+  window.addEventListener('resize', resize);
+
+  function wake() {
+    if (running) return;
+    running = true; last = performance.now();
+    requestAnimationFrame(frame);
+  }
+
+  // pointermove + eventos intermediários: o rastro recebe todos os pontos do mouse,
+  // mesmo quando o navegador entrega menos quadros (economia de energia)
+  function onMove(e) {
     mouse.x = e.clientX;
     mouse.y = e.clientY;
     if (!visible) { visible = true; pos.x = mouse.x; pos.y = mouse.y; cur.classList.add('is-visible'); }
-    trail.push({ x: e.clientX, y: e.clientY, t: performance.now() });
-  }, { passive: true });
+    var list = (e.getCoalescedEvents && e.getCoalescedEvents()) || [];
+    if (!list.length) list = [e];
+    var now = performance.now(), n = list.length;
+    for (var i = 0; i < n; i++) {
+      trail.push({ x: list[i].clientX, y: list[i].clientY, t: now - (n - 1 - i) * 4 });
+    }
+    if (trail.length > 160) trail.splice(0, trail.length - 160);
+    wake();
+  }
+  if (window.PointerEvent) window.addEventListener('pointermove', onMove, { passive: true });
+  else window.addEventListener('mousemove', onMove, { passive: true });
 
-  document.addEventListener('mouseleave', function () { visible = false; cur.classList.remove('is-visible'); trail.length = 0; });
+  document.addEventListener('mouseleave', function () { visible = false; cur.classList.remove('is-visible'); trail.length = 0; wake(); });
   window.addEventListener('mousedown', function () { cur.classList.add('is-down'); });
   window.addEventListener('mouseup', function () { cur.classList.remove('is-down'); });
 
@@ -72,24 +93,30 @@
   // Cor do rastro (verde da marca)
   var LIME = '198, 255, 2';
 
-  function frame() {
-    var now = performance.now();
+  function frame(now) {
+    var dt = Math.min(0.1, (now - last) / 1000 || 0.016);
+    last = now;
 
-    // bolinha segue o mouse com leve atraso
-    pos.x += (mouse.x - pos.x) * 0.32;
-    pos.y += (mouse.y - pos.y) * 0.32;
-    cur.style.transform = 'translate3d(' + pos.x + 'px,' + pos.y + 'px,0)';
+    // bolinha segue o mouse com leve atraso, calculado pelo tempo (não por quadro)
+    var k = 1 - Math.pow(0.6, dt * 60);
+    pos.x += (mouse.x - pos.x) * k;
+    pos.y += (mouse.y - pos.y) * k;
+    cur.style.transform = 'translate3d(' + pos.x.toFixed(2) + 'px,' + pos.y.toFixed(2) + 'px,0)';
 
     // rastro: linha que afina e some
-    while (trail.length && now - trail[0].t > TRAIL_LIFE) trail.shift();
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
-    if (trail.length > 2 && !cur.classList.contains('is-link') && !cur.classList.contains('is-light')) {
+    var t = performance.now();
+    while (trail.length && t - trail[0].t > TRAIL_LIFE) trail.shift();
+    if (box) ctx.clearRect(box[0], box[1], box[2] - box[0], box[3] - box[1]);
+    box = null;
+    var hidden = cur.classList.contains('is-link') || cur.classList.contains('is-light');
+    if (trail.length > 2 && !hidden) {
+      var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       // curva suavizada: cada trecho vai do meio de um ponto ao meio do próximo
       for (var i = 1; i < trail.length - 1; i++) {
         var a = trail[i - 1], b = trail[i], c = trail[i + 1];
-        var life = 1 - (now - b.t) / TRAIL_LIFE;
+        var life = 1 - (t - b.t) / TRAIL_LIFE;
         if (life <= 0) continue;
         var ease = life * life; // some de forma mais gradual
         ctx.strokeStyle = 'rgba(' + LIME + ',' + (ease * 0.45).toFixed(3) + ')';
@@ -98,9 +125,16 @@
         ctx.moveTo((a.x + b.x) / 2, (a.y + b.y) / 2);
         ctx.quadraticCurveTo(b.x, b.y, (b.x + c.x) / 2, (b.y + c.y) / 2);
         ctx.stroke();
+        if (b.x < x0) x0 = b.x; if (b.x > x1) x1 = b.x;
+        if (b.y < y0) y0 = b.y; if (b.y > y1) y1 = b.y;
       }
+      if (x1 >= x0) box = [Math.floor(x0 - 12), Math.floor(y0 - 12), Math.ceil(x1 + 12), Math.ceil(y1 + 12)];
     }
+
+    // parado e sem rastro: o loop dorme até o próximo movimento
+    var settled = Math.abs(mouse.x - pos.x) < 0.1 && Math.abs(mouse.y - pos.y) < 0.1;
+    if (!trail.length && settled && !box) { running = false; return; }
     requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  wake();
 })();

@@ -141,15 +141,23 @@
 
   // ---------- Câmera ----------
   var W = 0, H = 0, R = 0, CX = 0, CY = 0, dpr = 1;
+  // Camada base (atmosfera + superfície + pontos) desenhada à parte e reaproveitada:
+  // só é refeita quando o globo gira o suficiente para mudar na tela.
+  var base = document.createElement('canvas'), bctx = base.getContext('2d');
+  var baseAy = null, baseAx = null, baseDirty = true;
+  var STEP = 1, slowHits = 0;                 // densidade de pontos (ajuste automático)
   var clock = 0, spin = BASE_SPIN, yaw = 0, pitch = 0, tYaw = 0, tPitch = 0;
   var speed = 1, tSpeed = 1;
 
   function resize() {
     var rect = wrap.getBoundingClientRect();
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 1.75);
     W = rect.width; H = rect.height;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    base.width = canvas.width; base.height = canvas.height;
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    baseDirty = true;
     R = W * 0.74;
     CX = W / 2;
     CY = H * 0.16 + R;
@@ -172,6 +180,55 @@
   function visible(q) { return q.z >= 0 || (q.ux * q.ux + q.uy * q.uy) > 1; }
 
   // ---------- Desenho ----------
+  function drawBase() {
+    var c = bctx;
+    c.clearRect(0, 0, W, H);
+
+    // brilho da atmosfera na borda do globo
+    var g = c.createRadialGradient(CX, CY, R * 0.97, CX, CY, R * 1.07);
+    g.addColorStop(0, 'rgba(' + LIME + ', 0)');
+    g.addColorStop(0.3, 'rgba(' + LIME + ', .10)');
+    g.addColorStop(1, 'rgba(' + LIME + ', 0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(CX, CY, R * 1.07, 0, Math.PI * 2); c.fill();
+
+    // superfície
+    var sg = c.createRadialGradient(CX, CY - R * 0.9, R * 0.1, CX, CY, R);
+    sg.addColorStop(0, '#242424');
+    sg.addColorStop(1, '#151515');
+    c.fillStyle = sg;
+    c.beginPath(); c.arc(CX, CY, R, 0, Math.PI * 2); c.fill();
+
+    // pontos (agrupados por intensidade: poucas trocas de cor = mais leve)
+    var LB = 8, OB = 3, land = [], sea = [], brz = [], b;
+    for (b = 0; b < LB; b++) { land.push(new Path2D()); brz.push(new Path2D()); }
+    for (b = 0; b < OB; b++) sea.push(new Path2D());
+    for (var i = 0; i < pts.length; i += STEP) {
+      var pt = pts[i];
+      var q = project(pt);
+      if (q.z < 0.02 || q.y < -4 || q.y > H + 4 || q.x < -4 || q.x > W + 4) continue;
+      var d = Math.min(1, q.z * 1.6);
+      var bi = Math.min(LB - 1, (d * LB) | 0);
+      if (pt.land) {
+        var s = (0.7 + d * 0.9) * (STEP > 1 ? 1.25 : 1);
+        (pt.br ? brz : land)[bi].rect(q.x - s / 2, q.y - s / 2, s, s);
+      } else {
+        sea[Math.min(OB - 1, (d * OB) | 0)].rect(q.x - 0.4, q.y - 0.4, 0.8, 0.8);
+      }
+    }
+    for (b = 0; b < OB; b++) {
+      c.fillStyle = 'rgba(' + MIST + ',' + (0.04 + ((b + 0.5) / OB) * 0.07).toFixed(3) + ')';
+      c.fill(sea[b]);
+    }
+    for (b = 0; b < LB; b++) {
+      var lv = (b + 0.5) / LB;
+      c.fillStyle = 'rgba(' + MIST + ',' + (0.2 + lv * 0.45).toFixed(3) + ')';
+      c.fill(land[b]);
+      c.fillStyle = 'rgba(' + LIME + ',' + (0.22 + lv * 0.5).toFixed(3) + ')';
+      c.fill(brz[b]);
+    }
+  }
+
   function draw(dt) {
     speed += (tSpeed - speed) * Math.min(1, dt * 3);
     yaw += (tYaw - yaw) * Math.min(1, dt * 4);
@@ -180,55 +237,21 @@
     spin = BASE_SPIN + Math.sin(clock * 0.12) * 0.12;
     setAngles();
 
+    var ay = spin + yaw, ax = TILT + pitch;
+    if (baseDirty || Math.abs(ay - baseAy) > 0.0012 || Math.abs(ax - baseAx) > 0.0012) {
+      var t0 = performance.now();
+      drawBase();
+      baseAy = ay; baseAx = ax; baseDirty = false;
+      // computador sofrendo? diminui a quantidade de pontos (até 1 a cada 3)
+      if (performance.now() - t0 > 9) { if (++slowHits > 4 && STEP < 3) { STEP++; slowHits = 0; } }
+      else slowHits = Math.max(0, slowHits - 1);
+    }
     ctx.clearRect(0, 0, W, H);
-
-    // brilho da atmosfera na borda do globo
-    var g = ctx.createRadialGradient(CX, CY, R * 0.97, CX, CY, R * 1.07);
-    g.addColorStop(0, 'rgba(' + LIME + ', 0)');
-    g.addColorStop(0.3, 'rgba(' + LIME + ', .10)');
-    g.addColorStop(1, 'rgba(' + LIME + ', 0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(CX, CY, R * 1.07, 0, Math.PI * 2); ctx.fill();
-
-    // superfície
-    var sg = ctx.createRadialGradient(CX, CY - R * 0.9, R * 0.1, CX, CY, R);
-    sg.addColorStop(0, '#242424');
-    sg.addColorStop(1, '#151515');
-    ctx.fillStyle = sg;
-    ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2); ctx.fill();
-
-    // pontos (agrupados por intensidade: poucas trocas de cor = mais leve)
-    var LB = 8, OB = 3, land = [], sea = [], brz = [], b;
-    for (b = 0; b < LB; b++) { land.push(new Path2D()); brz.push(new Path2D()); }
-    for (b = 0; b < OB; b++) sea.push(new Path2D());
-    for (var i = 0; i < pts.length; i++) {
-      var pt = pts[i];
-      var q = project(pt);
-      if (q.z < 0.02 || q.y < -4 || q.y > H + 4 || q.x < -4 || q.x > W + 4) continue;
-      var d = Math.min(1, q.z * 1.6);
-      var bi = Math.min(LB - 1, (d * LB) | 0);
-      if (pt.land) {
-        var s = 0.7 + d * 0.9;
-        (pt.br ? brz : land)[bi].rect(q.x - s / 2, q.y - s / 2, s, s);
-      } else {
-        sea[Math.min(OB - 1, (d * OB) | 0)].rect(q.x - 0.4, q.y - 0.4, 0.8, 0.8);
-      }
-    }
-    for (b = 0; b < OB; b++) {
-      ctx.fillStyle = 'rgba(' + MIST + ',' + (0.04 + ((b + 0.5) / OB) * 0.07).toFixed(3) + ')';
-      ctx.fill(sea[b]);
-    }
-    for (b = 0; b < LB; b++) {
-      var lv = (b + 0.5) / LB;
-      ctx.fillStyle = 'rgba(' + MIST + ',' + (0.2 + lv * 0.45).toFixed(3) + ')';
-      ctx.fill(land[b]);
-      ctx.fillStyle = 'rgba(' + LIME + ',' + (0.22 + lv * 0.5).toFixed(3) + ')';
-      ctx.fill(brz[b]);
-    }
+    ctx.drawImage(base, 0, 0, W, H);
 
     // conexões
     ctx.lineCap = 'round';
-    var STEPS = 40;
+    var STEPS = 28;
     for (var a = 0; a < arcs.length; a++) {
       var arc = arcs[a];
       if (arc.wait > 0) {
@@ -249,15 +272,15 @@
       if (!arc.intl || arc.wait <= 0) {
       var prev = null;
       ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(' + LIME + ',' + (0.1 + 0.08 * speed / 3).toFixed(3) + ')';
+      ctx.beginPath();
       for (var s2 = 0; s2 <= STEPS; s2++) {
         var p = project(arcPoint(arc, s2 / STEPS));
         var ok = visible(p) && p.y < H + 2;
-        if (prev && ok && prev.ok) {
-          ctx.strokeStyle = 'rgba(' + LIME + ',' + (0.1 + 0.08 * speed / 3).toFixed(3) + ')';
-          ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(p.x, p.y); ctx.stroke();
-        }
+        if (ok) { if (prev && prev.ok) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); }
         p.ok = ok; prev = p;
       }
+      ctx.stroke();
       }
 
       // pulso viajando: cabeça forte, rastro que some
@@ -326,7 +349,7 @@
   resize();
   setAngles();
   draw(0.016);
-  window.addEventListener('resize', function () { resize(); if (!running) draw(0); });
+  window.addEventListener('resize', function () { resize(); draw(0); });
 
   if ('IntersectionObserver' in window) {
     new IntersectionObserver(function (e) {

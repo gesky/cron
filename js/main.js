@@ -189,8 +189,12 @@
       var s = { mx: 50, my: 50, l: 0, tx: 0, ty: 0 };      // estado atual
       var t = { mx: 50, my: 50, l: 0, tx: 0, ty: 0 };      // alvo
       var raf = null;
-      function tick() {
-        var k = 0.16, done = true;
+      var lastT = 0;
+      function tick(now) {
+        // suavização pelo tempo: mesma velocidade em 30, 60 ou 120 quadros por segundo
+        var dt = lastT ? Math.min(0.1, (now - lastT) / 1000) : 0.016;
+        lastT = now;
+        var k = 1 - Math.pow(0.84, dt * 60), done = true;
         for (var key in s) {
           s[key] += (t[key] - s[key]) * k;
           if (Math.abs(t[key] - s[key]) > 0.01) done = false;
@@ -204,6 +208,7 @@
         card.style.setProperty('--ry', ang ? (s.tx / ang).toFixed(3) : 1);
         card.style.setProperty('--ra', (ang * 4).toFixed(3) + 'deg');
         raf = done ? null : requestAnimationFrame(tick);
+        if (done) lastT = 0;
       }
       function go() { if (!raf) raf = requestAnimationFrame(tick); }
       card.addEventListener('mousemove', function (e) {
@@ -229,13 +234,17 @@
   var px = document.getElementById('parallax');
   if (px && !reduced && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
     var cur = { x: 0, y: 0, s: 1 }, tgt = { x: 0, y: 0, s: 1 }, pxRaf = null;
-    function pxTick() {
-      var still = true;
-      for (var k in cur) { cur[k] += (tgt[k] - cur[k]) * 0.08; if (Math.abs(tgt[k] - cur[k]) > 0.001) still = false; }
+    var pxLast = 0;
+    function pxTick(now) {
+      var dt = pxLast ? Math.min(0.1, (now - pxLast) / 1000) : 0.016;
+      pxLast = now;
+      var f = 1 - Math.pow(0.92, dt * 60), still = true;
+      for (var k in cur) { cur[k] += (tgt[k] - cur[k]) * f; if (Math.abs(tgt[k] - cur[k]) > 0.001) still = false; }
       px.style.setProperty('--x', cur.x.toFixed(2) + 'px');
       px.style.setProperty('--y', cur.y.toFixed(2) + 'px');
       px.style.setProperty('--s', cur.s.toFixed(4));
       pxRaf = still ? null : requestAnimationFrame(pxTick);
+      if (still) pxLast = 0;
     }
     function pxGo() { if (!pxRaf) pxRaf = requestAnimationFrame(pxTick); }
     px.addEventListener('mousemove', function (e) {

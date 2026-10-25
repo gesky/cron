@@ -746,7 +746,6 @@ details p { padding: 0 48px 26px 0; color: var(--ink-70); max-width: 64ch; }
   transform: translateY(14px);
   transition: opacity .7s ease, filter .7s ease, transform .7s ease;
   transition-delay: var(--d, 0s);
-  will-change: opacity, filter, transform;
 }
 .js .reveal.in-view {
   opacity: 1;
