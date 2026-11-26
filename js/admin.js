@@ -194,23 +194,27 @@
         addInter(batch, ref, inters);
         return batch.commit().then(function () { return ref.id; });
       },
-      // Exclusão completa (LGPD): primeiro o histórico, em lotes de até 400, depois o lead
+      // Exclusão completa (LGPD): histórico, kit da marca e prévias, em lotes; o lead por último
       deleteLead: function (id) {
         var ref = leadsCol.doc(id);
-        return ref.collection('interacoes').get().then(function (snap) {
-          var docs = snap.docs, chain = Promise.resolve();
-          for (var i = 0; i < docs.length; i += 400) {
-            (function (part, last) {
+        return Promise.all([
+          ref.collection('interacoes').get(),
+          ref.collection('kit').get(),
+          db.collection('previews').where('leadId', '==', id).get()
+        ]).then(function (res) {
+          var refs = [];
+          res.forEach(function (snap) { snap.docs.forEach(function (d) { refs.push(d.ref); }); });
+          var chain = Promise.resolve();
+          for (var i = 0; i < refs.length; i += 400) {
+            (function (part) {
               chain = chain.then(function () {
                 var b = db.batch();
-                part.forEach(function (d) { b.delete(d.ref); });
-                if (last) b.delete(ref);
+                part.forEach(function (r) { b.delete(r); });
                 return b.commit();
               });
-            })(docs.slice(i, i + 400), i + 400 >= docs.length);
+            })(refs.slice(i, i + 400));
           }
-          if (!docs.length) chain = chain.then(function () { return ref.delete(); });
-          return chain;
+          return chain.then(function () { return ref.delete(); });
         });
       },
       watchInteractions: function (id, cb, onErr) {
@@ -260,6 +264,47 @@
           })(items.slice(i, i + 150));
         }
         return chain;
+      },
+      // ---------- Kit da marca e sites modelo ----------
+      getKit: function (leadId) {
+        return leadsCol.doc(leadId).collection('kit').doc('marca').get().then(function (d) { return d.exists ? d.data() : null; });
+      },
+      saveKit: function (leadId, data) {
+        data.updatedAt = FV.serverTimestamp();
+        data.updatedBy = 'admin';
+        return leadsCol.doc(leadId).collection('kit').doc('marca').set(data);
+      },
+      listPreviews: function (leadId) {
+        return db.collection('previews').where('leadId', '==', leadId).get().then(function (snap) {
+          var list = [];
+          snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
+          return list.sort(function (a, b) { return (toDate(b.createdAt) || 0) - (toDate(a.createdAt) || 0); });
+        });
+      },
+      getPreview: function (id) {
+        return db.collection('previews').doc(id).get().then(function (d) { return d.exists ? Object.assign({ id: d.id }, d.data()) : null; });
+      },
+      // Cria a prévia, liga ao lead e registra no histórico no mesmo batch. A anterior é desativada.
+      createPreview: function (data, oldId) {
+        var ref = db.collection('previews').doc();
+        var lead = leadsCol.doc(data.leadId);
+        data.createdAt = FV.serverTimestamp();
+        data.updatedAt = FV.serverTimestamp();
+        data.createdBy = 'admin';
+        data.active = true;
+        var b = db.batch();
+        b.set(ref, data);
+        b.update(lead, { previewId: ref.id, updatedAt: FV.serverTimestamp() });
+        addInter(b, lead, [{ type: 'nota', text: oldId ? 'Site modelo gerado de novo.' : 'Site modelo gerado.' }]);
+        if (oldId) b.update(db.collection('previews').doc(oldId), { active: false, updatedAt: FV.serverTimestamp() });
+        return b.commit().then(function () { return ref.id; });
+      },
+      updatePreview: function (id, data) {
+        data.updatedAt = FV.serverTimestamp();
+        return db.collection('previews').doc(id).update(data);
+      },
+      setPreviewActive: function (id, active) {
+        return db.collection('previews').doc(id).update({ active: !!active, updatedAt: FV.serverTimestamp() });
       },
       // ---------- Rodadas de prospecção ----------
       watchRodadas: function (cb, onErr) {
@@ -368,6 +413,7 @@
     fmtPhone: fmtPhone, initials: initials, firstName: firstName, safeUrl: safeUrl,
     toast: toast, confirmBox: confirmBox, promptBox: promptBox,
     openDrawer: openDrawer, closeDrawer: closeDrawer,
+    toWebP: function (file, maxDim, maxChars) { return toWebP(file, maxDim, maxChars); },
     setTab: function (t) { setTab(t); },
     user: { uid: '', email: '' },
     // Recebe a lista completa de leads sempre que algo muda. Devolve a função para parar.
@@ -517,14 +563,20 @@
   // =================================================================
   // GAVETAS (abrir/fechar)
   // =================================================================
+  // Gavetas podem se empilhar (ex.: editar a prévia por cima do lead); Esc fecha só a de cima
+  var drawerStack = [];
   function openDrawer(dr) {
+    drawerStack = drawerStack.filter(function (d) { return d !== dr; });
+    drawerStack.push(dr);
+    dr.style.zIndex = 50 + drawerStack.length;
     dr.hidden = false;
     requestAnimationFrame(function () { requestAnimationFrame(function () { dr.classList.add('is-open'); }); });
     document.body.style.overflow = 'hidden';
   }
   function closeDrawer(dr) {
+    drawerStack = drawerStack.filter(function (d) { return d !== dr; });
     dr.classList.remove('is-open');
-    document.body.style.overflow = '';
+    if (!drawerStack.length) document.body.style.overflow = '';
     dr.dispatchEvent(new CustomEvent('drawer:closed'));
     setTimeout(function () { if (!dr.classList.contains('is-open')) dr.hidden = true; }, 380);
   }
@@ -535,7 +587,8 @@
   });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || !$('#confirm').hidden || !$('#promptDlg').hidden) return;
-    $$('.drawer.is-open').forEach(closeDrawer);
+    var top = drawerStack[drawerStack.length - 1];
+    if (top) closeDrawer(top);
   });
 
   // =================================================================
@@ -752,10 +805,13 @@
   }
 
   // Redimensiona e comprime até caber no documento do Firestore
-  function toWebP(file) {
+  // Converte para WebP dentro de um limite de tamanho. Padrão: imagens de projeto.
+  function toWebP(file, maxDim, maxChars) {
+    maxDim = maxDim || IMG_MAX_DIM;
+    maxChars = maxChars || IMG_MAX_CHARS;
     return loadImage(file).then(function (img) {
       var w = img.naturalWidth, h = img.naturalHeight;
-      var scale = Math.min(1, IMG_MAX_DIM / Math.max(w, h));
+      var scale = Math.min(1, maxDim / Math.max(w, h));
       var q = 0.82;
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
@@ -767,7 +823,7 @@
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         var data = canvas.toDataURL('image/webp', q);
         if (data.indexOf('data:image/webp') !== 0) throw new Error('no-webp');
-        if (data.length <= IMG_MAX_CHARS) return data;
+        if (data.length <= maxChars) return data;
         if (q > 0.55) q -= 0.08; else scale *= 0.85;
       }
       throw new Error('too-big');
@@ -923,6 +979,27 @@
       pend({ id: 'l17', company: 'Casa Nobre Móveis', siteStatus: 'sem_site', googleRating: 4.5, googleReviews: 60, prospectState: 'descartado', discardReason: 'Sem nenhum contato encontrado.' })
     );
     mem.leads.forEach(function (l) { if (l.id === 'l3' || l.id === 'l4') l.prospectState = 'aprovado'; });
+    // Sites modelo de exemplo (os mesmos de modelo/demo-data.js, para abrir em modelo/?demo=<id>)
+    var DM = window.CRON_MODELO_DEMO;
+    mem.previews = DM ? DM.list().map(function (p) { return Object.assign({ createdAt: ago(3 * H), updatedAt: ago(3 * H), createdBy: 'admin' }, p); }) : [];
+    mem.kits = {};
+    var setQ = function (id, o) { var l = mem.leads.find(function (x) { return x.id === id; }); if (l) Object.assign(l, o); };
+    var byLead = function (leadId) { return mem.previews.find(function (p) { return p.leadId === leadId; }); };
+    mem.previews.forEach(function (p) {
+      setQ(p.leadId, {
+        qualification: 'qualificado', format: p.format, formatReason: p.formatReason || '', previewId: p.id,
+        brand: { primaryColor: p.primaryColor || '', secondaryColor: p.secondaryColor || '', tagline: p.tagline || '', mainService: p.mainService || '', services: (p.services || []).slice() }
+      });
+      mem.kits[p.leadId] = { logo: p.logo || '', products: (p.products || []).slice(), categories: (p.categories || []).slice() };
+    });
+    if (byLead('l4')) { var l4 = mem.leads.find(function (x) { return x.id === 'l4'; }); l4.draft.previewId = byLead('l4').id; l4.draft.text += ' {link}'; }
+    setQ('l15', { qualification: 'desqualificado', disqualifyReason: 'Já tem site novo, feito este ano.' });
+    setQ('l16', { qualification: '', format: '' });
+    // Prévias do modo demo também ficam no navegador, para a página modelo/?demo= encontrar
+    var saveLocal = function (p) {
+      try { localStorage.setItem('cron_demo_preview_' + p.id, JSON.stringify(p)); } catch (e) {}
+    };
+    mem.previews.forEach(saveLocal);
     mem.admins = [
       { id: 'demoAdminUid000000000001', name: 'Pedro Spadotto', email: 'pedro@cronwebstudio.com.br', role: 'admin', createdAt: ago(60 * D) },
       { id: 'demoAdminUid000000000002', name: '', email: '', createdAt: ago(30 * D) }
@@ -974,7 +1051,45 @@
       deleteLead: function (id) {
         mem.leads = mem.leads.filter(function (x) { return x.id !== id; });
         delete mem.inter[id];
+        delete mem.kits[id];
+        mem.previews = mem.previews.filter(function (p) {
+          if (p.leadId !== id) return true;
+          try { localStorage.removeItem('cron_demo_preview_' + p.id); } catch (e) {}
+          return false;
+        });
         return wait().then(emit);
+      },
+      getKit: function (leadId) { return wait(mem.kits[leadId] ? clone(mem.kits[leadId]) : null); },
+      saveKit: function (leadId, data) {
+        mem.kits[leadId] = clone(data);
+        return wait();
+      },
+      listPreviews: function (leadId) {
+        return wait(clone(mem.previews.filter(function (p) { return p.leadId === leadId; }))
+          .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }));
+      },
+      getPreview: function (id) { var p = mem.previews.find(function (x) { return x.id === id; }); return wait(p ? clone(p) : null); },
+      createPreview: function (data, oldId) {
+        var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', id = '';
+        for (var i = 0; i < 20; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
+        var p = Object.assign({}, clone(data), { id: id, active: true, createdBy: 'admin', createdAt: new Date(), updatedAt: new Date() });
+        mem.previews.push(p);
+        saveLocal(p);
+        if (oldId) { var o = mem.previews.find(function (x) { return x.id === oldId; }); if (o) { o.active = false; saveLocal(o); } }
+        var l = mem.leads.find(function (x) { return x.id === data.leadId; });
+        if (l) { l.previewId = id; l.updatedAt = new Date(); }
+        pushInter(data.leadId, [{ type: 'nota', text: oldId ? 'Site modelo gerado de novo.' : 'Site modelo gerado.' }]);
+        return wait(id).then(function (v) { emit(); return v; });
+      },
+      updatePreview: function (id, data) {
+        var p = mem.previews.find(function (x) { return x.id === id; });
+        if (p) { apply(p, clone(data)); Object.keys(data).forEach(function (k) { if (data[k] === DEL) delete p[k]; }); p.updatedAt = new Date(); saveLocal(p); }
+        return wait();
+      },
+      setPreviewActive: function (id, active) {
+        var p = mem.previews.find(function (x) { return x.id === id; });
+        if (p) { p.active = !!active; p.updatedAt = new Date(); saveLocal(p); }
+        return wait();
       },
       watchInteractions: function (id, cb) { interListeners[id] = cb; setTimeout(function () { emitInter(id); }, 100); return function () { delete interListeners[id]; }; },
       addInteraction: function (id, it) { pushInter(id, [it]); return wait(); },
