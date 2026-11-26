@@ -31,6 +31,8 @@
   }
 
   var header = document.getElementById('header');
+  var toggle = document.getElementById('menuToggle');
+  var nav = document.getElementById('nav');
   function headerOffset() {
     return -((header ? header.offsetHeight : 80) + 24);
   }
@@ -43,6 +45,8 @@
       var target = document.querySelector(id);
       if (!target) return;
       e.preventDefault();
+      // no celular, fecha o menu antes de rolar: com o menu aberto a rolagem fica travada
+      if (nav && nav.classList.contains('is-open')) setMenu(false);
       if (lenis) lenis.scrollTo(id === '#topo' ? 0 : target, { offset: headerOffset() });
       else window.scrollTo({ top: id === '#topo' ? 0 : target.getBoundingClientRect().top + window.scrollY + headerOffset(), behavior: reduced ? 'auto' : 'smooth' });
     });
@@ -79,8 +83,6 @@
   // ------------------------------------------------------------------
   // Menu mobile
   // ------------------------------------------------------------------
-  var toggle = document.getElementById('menuToggle');
-  var nav = document.getElementById('nav');
 
   function setMenu(open) {
     nav.classList.toggle('is-open', open);
