@@ -242,6 +242,88 @@
           return chain.then(function () { return docs.length; });
         });
       },
+      // Várias atualizações de leads (aprovar ou descartar em lote). Cada item: { id, data, inters }
+      updateLeads: function (items) {
+        var chain = Promise.resolve();
+        for (var i = 0; i < items.length; i += 150) {
+          (function (part) {
+            chain = chain.then(function () {
+              var b = db.batch();
+              part.forEach(function (it) {
+                var ref = leadsCol.doc(it.id);
+                it.data.updatedAt = FV.serverTimestamp();
+                b.update(ref, it.data);
+                addInter(b, ref, it.inters);
+              });
+              return b.commit();
+            });
+          })(items.slice(i, i + 150));
+        }
+        return chain;
+      },
+      // ---------- Rodadas de prospecção ----------
+      watchRodadas: function (cb, onErr) {
+        return db.collection('rodadas').orderBy('createdAt', 'desc').onSnapshot(function (snap) {
+          var list = [];
+          snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
+          cb(list);
+        }, onErr);
+      },
+      createRodada: function (data) {
+        data.createdAt = FV.serverTimestamp();
+        data.updatedAt = FV.serverTimestamp();
+        data.createdBy = 'admin';
+        return db.collection('rodadas').add(data).then(function (ref) { return ref.id; });
+      },
+      updateRodada: function (id, data) {
+        data.updatedAt = FV.serverTimestamp();
+        return db.collection('rodadas').doc(id).update(data);
+      },
+      // ---------- Usuários do painel ----------
+      watchAdmins: function (cb, onErr) {
+        return db.collection('admins').onSnapshot(function (snap) {
+          var list = [];
+          snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
+          cb(list);
+        }, onErr);
+      },
+      watchSelf: function (uid, cb) {
+        return db.collection('admins').doc(uid).onSnapshot(function (d) { cb(d.exists); }, function () {});
+      },
+      addAdmin: function (uid, data) {
+        data.createdAt = FV.serverTimestamp();
+        data.createdBy = C.auth.currentUser.uid;
+        data.role = 'admin';
+        return db.collection('admins').doc(uid).set(data);
+      },
+      updateAdmin: function (uid, data) {
+        data.updatedAt = FV.serverTimestamp();
+        return db.collection('admins').doc(uid).update(data);
+      },
+      removeAdmin: function (uid) { return db.collection('admins').doc(uid).delete(); },
+      // Cria a conta de login num app secundário, para não trocar a sua sessão.
+      // Sem senha definida, gera uma aleatória e manda o e-mail para a pessoa criar a dela.
+      createAuthUser: function (email, password) {
+        var sec = firebase.apps.filter(function (a) { return a.name === 'cron-users'; })[0] ||
+          firebase.initializeApp(C.config, 'cron-users');
+        var auth2 = sec.auth();
+        auth2.languageCode = 'pt-BR';
+        var pass = password;
+        if (!pass) {
+          var arr = new Uint32Array(6);
+          crypto.getRandomValues(arr);
+          pass = Array.prototype.map.call(arr, function (n) { return n.toString(36); }).join('') + 'Aa1!';
+        }
+        var uid;
+        return auth2.setPersistence(firebase.auth.Auth.Persistence.NONE)
+          .then(function () { return auth2.createUserWithEmailAndPassword(email, pass); })
+          .then(function (cred) {
+            uid = cred.user.uid;
+            return password ? null : auth2.sendPasswordResetEmail(email);
+          })
+          .then(function () { return auth2.signOut(); })
+          .then(function () { return uid; });
+      },
       listProjects: function () {
         return db.collection('projects').get().then(function (snap) {
           var list = [];
@@ -271,6 +353,14 @@
   // =================================================================
   var modules = [];
   var started = false;
+  var TABS = ['leads', 'prospect', 'projects', 'users'];
+  var unsubSelf = null;
+  // Uma única escuta de leads para todo o painel (CRM e Prospecção leem daqui)
+  var leadSubs = [], lastLeads = null, unsubLeadsAll = null;
+  function broadcastLeads(list) {
+    lastLeads = list;
+    leadSubs.forEach(function (cb) { cb(list); });
+  }
   window.CRON_ADMIN = {
     api: api || null,
     demo: demo,
@@ -279,6 +369,13 @@
     toast: toast, confirmBox: confirmBox, promptBox: promptBox,
     openDrawer: openDrawer, closeDrawer: closeDrawer,
     setTab: function (t) { setTab(t); },
+    user: { uid: '', email: '' },
+    // Recebe a lista completa de leads sempre que algo muda. Devolve a função para parar.
+    onLeads: function (cb) {
+      leadSubs.push(cb);
+      if (lastLeads) setTimeout(function () { cb(lastLeads); }, 0);
+      return function () { leadSubs = leadSubs.filter(function (x) { return x !== cb; }); };
+    },
     // Cada módulo chama register({ start, stop, onTab }). Se o painel já abriu, começa na hora.
     register: function (m) {
       modules.push(m);
@@ -293,6 +390,7 @@
 
   if (demo) {
     $('#userEmail').textContent = 'modo demonstração';
+    window.CRON_ADMIN.user = { uid: 'demoAdminUid000000000001', email: 'pedro@cronwebstudio.com.br' };
     startApp();
   } else {
     C.auth.onAuthStateChanged(function (user) {
@@ -300,6 +398,12 @@
       C.db.collection('admins').doc(user.uid).get().then(function (doc) {
         if (!doc.exists) { $('#deniedUid').textContent = user.uid; showView('view-denied'); return; }
         $('#userEmail').textContent = user.email;
+        window.CRON_ADMIN.user = { uid: user.uid, email: user.email || '' };
+        // Completa nome e e-mail no próprio cadastro de admin (documentos criados à mão no console)
+        var me = doc.data() || {};
+        if (!me.email && user.email) {
+          api.updateAdmin(user.uid, { email: user.email.toLowerCase().slice(0, 160) }).catch(function () {});
+        }
         startApp();
       }).catch(function () {
         $('#deniedUid').textContent = user.uid;
@@ -370,20 +474,38 @@
     try { saved = localStorage.getItem('cron_admin_tab') || ''; } catch (e) {}
     // Link direto para o CRM (#crm?...) sempre abre a aba CRM
     if (location.hash.indexOf('#crm') === 0) saved = 'leads';
-    setTab(saved === 'projects' ? 'projects' : 'leads');
+    setTab(TABS.indexOf(saved) !== -1 ? saved : 'leads');
+    unsubLeadsAll = api.watchLeads(broadcastLeads, function (err) {
+      console.error(err);
+      toast('Não foi possível carregar os leads.', true);
+    });
     modules.forEach(function (m) { if (m.start) m.start(); });
     loadProjects();
+    // Se o seu acesso for removido por outro admin, o painel fecha
+    if (!demo && api.watchSelf) {
+      unsubSelf = api.watchSelf(window.CRON_ADMIN.user.uid, function (exists) {
+        if (!exists) { toast('Seu acesso ao painel foi removido.', true); C.auth.signOut(); }
+      });
+    }
   }
   function stopApp() {
     modules.forEach(function (m) { if (m.stop) m.stop(); });
+    if (unsubLeadsAll) unsubLeadsAll();
+    if (unsubSelf) unsubSelf();
+    unsubLeadsAll = unsubSelf = null;
+    lastLeads = null;
     started = false;
   }
 
   // ---------- Abas ----------
   function setTab(tab) {
-    $$('.side__link').forEach(function (b) { b.classList.toggle('is-active', b.dataset.tab === tab); });
-    $('#tab-leads').hidden = tab !== 'leads';
-    $('#tab-projects').hidden = tab !== 'projects';
+    if (TABS.indexOf(tab) === -1) tab = 'leads';
+    $$('.side__link').forEach(function (b) {
+      var on = b.dataset.tab === tab;
+      b.classList.toggle('is-active', on);
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    TABS.forEach(function (t) { var el = $('#tab-' + t); if (el) el.hidden = t !== tab; });
     try { localStorage.setItem('cron_admin_tab', tab); } catch (e) {}
     modules.forEach(function (m) { if (m.onTab) m.onTab(tab); });
     window.scrollTo(0, 0);
@@ -786,7 +908,28 @@
         { id: 'p2', client: 'Plane Aviation', segment: 'Aviação executiva', title: 'Frota e serviços sempre atualizados.', description: 'Site institucional com painel para aeronaves, serviços e galeria.', quote: { text: 'Hoje a gente atualiza tudo sozinho.', author: 'Plane Aviation' }, tags: ['Institucional', 'Painel'], ctaLabel: '', siteUrl: '', siteLabel: '', image: '', imageAlt: '', published: true, order: 1 }
       ]
     };
-    var listener = null, interListeners = {};
+    mem.rodadas = [
+      { id: 'r1', niche: 'industria-moveis', nicheLabel: 'Indústria de móveis', region: 'Interior de SP', criteria: { minRating: 4.3, minReviews: 30, siteStatusAccepted: ['sem_site', 'site_fraco'], requireContact: true }, funnel: { encontradas: 48, notaMinima: 31, avaliacoes: 22, siteSemOuFraco: 14, comContato: 9, qualificadas: 6 }, status: 'em_andamento', notes: 'Primeira rodada de teste.', createdBy: 'cronus', createdAt: ago(1 * D), updatedAt: ago(2 * H) },
+      { id: 'r2', niche: 'saude-odontologia', nicheLabel: 'Clínicas odontológicas', region: 'Norte do PR', criteria: { minRating: 4.5, minReviews: 50, siteStatusAccepted: ['site_fraco'], requireContact: true }, funnel: { encontradas: 30, notaMinima: 20, avaliacoes: 12, siteSemOuFraco: 6, comContato: 5, qualificadas: 3 }, status: 'concluida', notes: '', createdBy: 'cronus', createdAt: ago(6 * D), updatedAt: ago(4 * D) }
+    ];
+    var pend = function (o) {
+      return Object.assign({ origin: 'cronus', createdBy: 'cronus', batchId: 'r1', prospectState: 'pendente', status: 'novo', niche: 'industria-moveis', notes: '', createdAt: ago(20 * H), stageAt: ago(20 * H) }, o);
+    };
+    mem.leads.push(
+      pend({ id: 'l13', name: 'Marcos Bellini', role: 'Proprietário', company: 'Bellini Estofados', whatsapp: '43998765432', instagram: 'bellini.estofados', currentSite: 'https://bellini.com.br', siteStatus: 'site_fraco', siteScore: 2, siteReason: 'Site de 2014, não abre bem no celular e sem catálogo.', googleRating: 4.7, googleReviews: 156, channel: 'whatsapp', fitReason: 'Fábrica com 20 anos, linha grande de estofados e site parado.', drafts: { whatsapp: 'Oi, Marcos, tudo bem? Aqui é o Pedro, da Cron. Vi a linha de estofados da Bellini e reparei que o site não mostra os modelos. A gente cria catálogos online que a própria equipe atualiza. Posso te mandar um exemplo?', instagram: 'Oi, pessoal da Bellini! Aqui é o Pedro, da Cron. Os estofados de vocês merecem um catálogo à altura. Posso mandar uma ideia?' }, sources: { whatsapp: 'google_maps', instagram: 'busca', currentSite: 'busca' } }),
+      pend({ id: 'l14', company: 'Arte em Madeira Planejados', whatsapp: '14991230987', email: 'contato@arteemmadeira.com.br', siteStatus: 'sem_site', siteScore: 0, siteReason: 'Sem site, só perfil no Google.', googleRating: 4.9, googleReviews: 88, channel: 'whatsapp', fitReason: 'Avaliação alta e sem site próprio.', drafts: { whatsapp: 'Oi! Aqui é o Pedro, da Cron. Vi as avaliações da Arte em Madeira no Google, muito boas. Hoje quem procura vocês não encontra um site. Posso mostrar como ficaria um?', email: 'Olá, equipe da Arte em Madeira. Sou o Pedro, da Cron Web Studio...' } }),
+      pend({ id: 'l15', company: 'Moveis Sartori', instagram: 'moveissartori', siteStatus: 'site_fraco', siteScore: 4, siteReason: 'Página única sem formulário.', googleRating: 4.4, googleReviews: 41, channel: 'instagram', fitReason: 'Boa nota, portfólio no Instagram, site fraco.', drafts: { instagram: 'Oi, pessoal da Sartori! Aqui é o Pedro, da Cron. O portfólio de vocês no Instagram é ótimo. Posso mandar uma ideia de site que mostre isso?' } }),
+      pend({ id: 'l16', company: 'Lar Design Móveis', whatsapp: '43997651234', siteStatus: 'ok', siteScore: 7, googleRating: 4.3, googleReviews: 33, channel: 'whatsapp', fitReason: '' }),
+      pend({ id: 'l17', company: 'Casa Nobre Móveis', siteStatus: 'sem_site', googleRating: 4.5, googleReviews: 60, prospectState: 'descartado', discardReason: 'Sem nenhum contato encontrado.' })
+    );
+    mem.leads.forEach(function (l) { if (l.id === 'l3' || l.id === 'l4') l.prospectState = 'aprovado'; });
+    mem.admins = [
+      { id: 'demoAdminUid000000000001', name: 'Pedro Spadotto', email: 'pedro@cronwebstudio.com.br', role: 'admin', createdAt: ago(60 * D) },
+      { id: 'demoAdminUid000000000002', name: '', email: '', createdAt: ago(30 * D) }
+    ];
+    var listener = null, interListeners = {}, rodListener = null, admListener = null;
+    function emitRod() { if (rodListener) rodListener(mem.rodadas.slice().sort(function (a, b) { return b.createdAt - a.createdAt; })); }
+    function emitAdm() { if (admListener) admListener(mem.admins.slice()); }
     function emit() { if (listener) listener(mem.leads.slice().sort(function (a, b) { return b.createdAt - a.createdAt; })); }
     function emitInter(id) {
       var cb = interListeners[id];
@@ -835,6 +978,42 @@
       },
       watchInteractions: function (id, cb) { interListeners[id] = cb; setTimeout(function () { emitInter(id); }, 100); return function () { delete interListeners[id]; }; },
       addInteraction: function (id, it) { pushInter(id, [it]); return wait(); },
+      updateLeads: function (items) {
+        items.forEach(function (it) {
+          var l = mem.leads.find(function (x) { return x.id === it.id; });
+          if (!l) return;
+          apply(l, it.data); l.updatedAt = new Date();
+          pushInter(it.id, it.inters);
+        });
+        return wait().then(emit);
+      },
+      watchRodadas: function (cb) { rodListener = cb; setTimeout(emitRod, 120); return function () { rodListener = null; }; },
+      createRodada: function (data) {
+        var id = 'r' + Date.now();
+        mem.rodadas.push(Object.assign({ id: id, createdAt: new Date(), updatedAt: new Date(), createdBy: 'admin' }, data));
+        return wait(id).then(function (v) { emitRod(); return v; });
+      },
+      updateRodada: function (id, data) {
+        var r = mem.rodadas.find(function (x) { return x.id === id; });
+        apply(r, data); r.updatedAt = new Date();
+        return wait().then(emitRod);
+      },
+      watchAdmins: function (cb) { admListener = cb; setTimeout(emitAdm, 120); return function () { admListener = null; }; },
+      addAdmin: function (uid, data) {
+        if (mem.admins.some(function (a) { return a.id === uid; })) return Promise.reject({ code: 'already-exists' });
+        mem.admins.push(Object.assign({ id: uid, role: 'admin', createdAt: new Date(), createdBy: 'demoAdminUid000000000001' }, data));
+        return wait().then(emitAdm);
+      },
+      updateAdmin: function (uid, data) {
+        var a = mem.admins.find(function (x) { return x.id === uid; });
+        if (a) apply(a, data);
+        return wait().then(emitAdm);
+      },
+      removeAdmin: function (uid) { mem.admins = mem.admins.filter(function (a) { return a.id !== uid; }); return wait().then(emitAdm); },
+      createAuthUser: function (email) {
+        if (/existe@/.test(email)) return Promise.reject({ code: 'auth/email-already-in-use' });
+        return wait('demoUid' + Math.random().toString(36).slice(2, 12) + 'xxxxxxxxxx');
+      },
       migrateLegacyStatus: function () {
         var n = 0;
         mem.leads.forEach(function (l) { if (l.status === 'contato') { l.status = 'em_conversa'; n++; } });

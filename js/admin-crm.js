@@ -218,16 +218,13 @@
       if (['board', 'list', 'sources'].indexOf(view) === -1) view = 'board';
       readHash();
       $('#leadSearch').value = F.q;
-      unsubLeads = api.watchLeads(function (list) {
+      unsubLeads = A.onLeads(function (list) {
         leads = list.filter(function (l) { return !hidden(l); });
         render();
         if (openId && mode === 'view') {
           var l = find(openId);
           if (l) fill(l); else A.closeDrawer($('#leadDrawer'));
         }
-      }, function (err) {
-        console.error(err);
-        toast('Não foi possível carregar os leads.', true);
       });
     },
     stop: function () {
@@ -239,6 +236,9 @@
   });
 
   function find(id) { return leads.find(function (x) { return x.id === id; }); }
+
+  // Outros módulos (Prospecção) abrem um lead no CRM
+  A.crm = { open: function (id) { A.setTab('leads'); setTimeout(function () { openLead(id); }, 50); } };
 
   // =================================================================
   // Renderização geral
@@ -281,7 +281,7 @@
 
     renderFilterOptions();
 
-    $$('.viewsw button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
+    $$('#tab-leads .viewsw [data-view]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false'); });
     $('#crmBoard').hidden = view !== 'board';
     $('#crmList').hidden = view !== 'list';
     $('#crmSources').hidden = view !== 'sources';
@@ -444,7 +444,7 @@
     F.quick = F.quick === b.dataset.quick ? '' : b.dataset.quick;
     render();
   });
-  $$('.viewsw button').forEach(function (b) {
+  $$('#tab-leads .viewsw [data-view]').forEach(function (b) {
     b.addEventListener('click', function () {
       view = b.dataset.view;
       try { localStorage.setItem(STORE_VIEW, view); } catch (e) {}
