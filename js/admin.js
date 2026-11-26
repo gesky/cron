@@ -194,7 +194,25 @@
         addInter(batch, ref, inters);
         return batch.commit().then(function () { return ref.id; });
       },
-      deleteLead: function (id) { return leadsCol.doc(id).delete(); },
+      // Exclusão completa (LGPD): primeiro o histórico, em lotes de até 400, depois o lead
+      deleteLead: function (id) {
+        var ref = leadsCol.doc(id);
+        return ref.collection('interacoes').get().then(function (snap) {
+          var docs = snap.docs, chain = Promise.resolve();
+          for (var i = 0; i < docs.length; i += 400) {
+            (function (part, last) {
+              chain = chain.then(function () {
+                var b = db.batch();
+                part.forEach(function (d) { b.delete(d.ref); });
+                if (last) b.delete(ref);
+                return b.commit();
+              });
+            })(docs.slice(i, i + 400), i + 400 >= docs.length);
+          }
+          if (!docs.length) chain = chain.then(function () { return ref.delete(); });
+          return chain;
+        });
+      },
       watchInteractions: function (id, cb, onErr) {
         return leadsCol.doc(id).collection('interacoes').orderBy('createdAt', 'desc').limit(100)
           .onSnapshot(function (snap) {
@@ -350,6 +368,8 @@
     started = true;
     var saved = '';
     try { saved = localStorage.getItem('cron_admin_tab') || ''; } catch (e) {}
+    // Link direto para o CRM (#crm?...) sempre abre a aba CRM
+    if (location.hash.indexOf('#crm') === 0) saved = 'leads';
     setTab(saved === 'projects' ? 'projects' : 'leads');
     modules.forEach(function (m) { if (m.start) m.start(); });
     loadProjects();
@@ -747,7 +767,7 @@
         { id: 'l3', origin: 'cronus', createdBy: 'cronus', batchId: 'r1', name: 'Sérgio Tavares', role: 'Sócio-diretor', company: 'Tavares Móveis Planejados', niche: 'industria-moveis', whatsapp: '43999887766', instagram: 'tavaresmoveis', currentSite: '', siteStatus: 'sem_site', siteScore: 0, siteReason: 'Só tem Instagram e um link de catálogo em PDF.', googleRating: 4.8, googleReviews: 212, channel: 'whatsapp', fitReason: 'Fábrica com mais de 15 anos, catálogo grande e só PDF no WhatsApp.', status: 'mensagem_pronta', createdAt: ago(1 * D), stageAt: ago(1 * D), draft: { channel: 'whatsapp', text: 'Oi, Sérgio, tudo bem? Aqui é o Pedro, da Cron. Vi o trabalho da Tavares no Instagram e reparei que o catálogo vai por PDF. A gente monta catálogos online que a própria equipe atualiza. Posso te mostrar um exemplo?', approved: false }, sources: { whatsapp: 'google_maps', instagram: 'busca' }, googleMapsUrl: 'https://maps.google.com/?cid=1', notes: '' },
         { id: 'l4', origin: 'cronus', createdBy: 'cronus', batchId: 'r1', name: '', company: 'Vidraçaria Horizonte', niche: 'construcao-vidracaria', whatsapp: '14996660011', instagram: 'horizontevidros', currentSite: 'https://horizontevidros.com.br', siteStatus: 'site_fraco', siteScore: 3, siteReason: 'Lento no celular, sem formulário e fotos de 2016.', googleRating: 4.6, googleReviews: 98, channel: 'instagram', fitReason: 'Bem avaliada, portfólio de obras e site parado.', status: 'mensagem_pronta', createdAt: ago(1 * D), stageAt: ago(1 * D), draft: { channel: 'instagram', text: 'Oi, pessoal da Horizonte! Aqui é o Pedro, da Cron. As obras de vocês no Instagram são ótimas, mas o site não mostra isso. Posso mandar uma ideia de como ficaria?', approved: true, approvedAt: ago(2 * H) }, notes: '' },
         { id: 'l5', origin: 'cronus', createdBy: 'cronus', name: 'Ana Ribeiro', company: 'Clínica Sorriso Pleno', niche: 'saude-odontologia', whatsapp: '16991234567', instagram: 'sorrisopleno', siteStatus: 'site_fraco', siteScore: 4, channel: 'whatsapp', status: 'abordado', createdAt: ago(4 * D), stageAt: ago(2 * D), draft: { channel: 'whatsapp', text: 'Oi, Ana! Aqui é o Pedro, da Cron...', approved: true, approvedAt: ago(2 * D), sentAt: ago(2 * D) }, nextStep: { text: 'Follow-up se não responder', dueAt: today(17) }, notes: '' },
-        { id: 'l6', origin: 'indicacao', createdBy: 'admin', name: 'Carlos Menezes', role: 'Gerente comercial', company: 'Menezes Distribuidora', niche: 'distribuidor-hospitalar', whatsapp: '14997776655', email: 'carlos@menezesdist.com.br', channel: 'whatsapp', status: 'respondeu', createdAt: ago(6 * D), stageAt: ago(1 * D), fitReason: 'Indicação da MedControl.', nextStep: { text: 'Ligar para entender o catálogo', dueAt: ahead(3 * H) }, notes: '' },
+        { id: 'l6', origin: 'indicacao', createdBy: 'admin', name: 'Carlos Menezes', role: 'Gerente comercial', company: 'Menezes Distribuidora', niche: 'distribuidor-hospitalar', whatsapp: '5514997776655', phone: '1432345678', email: 'carlos@menezesdist.com.br', channel: 'whatsapp', status: 'respondeu', createdAt: ago(6 * D), stageAt: ago(1 * D), fitReason: 'Indicação da MedControl.', nextStep: { text: 'Ligar para entender o catálogo', dueAt: ahead(3 * H) }, notes: '' },
         site({ id: 'l7', name: 'Fernanda Lopes', whatsapp: '14996541230', email: 'fernanda@clinicavita.com', company: 'Clínica Vita', need: 'sistema', message: 'Precisamos de um painel pra equipe atualizar convênios e médicos.', source: 'plano-sistema', sourceLabel: 'Quero o plano Sistema', status: 'reuniao', createdAt: ago(9 * D), stageAt: ago(2 * D), meetingAt: ahead(1 * D + 2 * H), utm: { source: 'google', medium: 'organic' }, referrer: 'https://www.google.com/' }),
         site({ id: 'l8', name: 'João Pedro Martins', whatsapp: '1432231122', status: 'proposta', source: 'final-whatsapp', sourceLabel: 'Quero conversar', createdAt: ago(12 * D), stageAt: ago(5 * D), notes: 'Proposta enviada, plano institucional.', nextStep: { text: 'Cobrar retorno da proposta', dueAt: ago(2 * D) } }),
         site({ id: 'l9', name: 'Camila Rocha', whatsapp: '14991112233', email: 'camila@rochaarq.com.br', company: 'Rocha Arquitetura', need: 'institucional', status: 'fechado', createdAt: ago(30 * D), stageAt: ago(20 * D), notes: 'Fechou institucional.' }),
@@ -808,7 +828,11 @@
         pushInter(id, inters);
         return wait(id).then(function (v) { emit(); return v; });
       },
-      deleteLead: function (id) { mem.leads = mem.leads.filter(function (x) { return x.id !== id; }); return wait().then(emit); },
+      deleteLead: function (id) {
+        mem.leads = mem.leads.filter(function (x) { return x.id !== id; });
+        delete mem.inter[id];
+        return wait().then(emit);
+      },
       watchInteractions: function (id, cb) { interListeners[id] = cb; setTimeout(function () { emitInter(id); }, 100); return function () { delete interListeners[id]; }; },
       addInteraction: function (id, it) { pushInter(id, [it]); return wait(); },
       migrateLegacyStatus: function () {

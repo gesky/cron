@@ -134,10 +134,24 @@
   function sentToday(l) { return l.draft && sameDay(toDate(l.draft.sentAt), new Date()); }
   function httpUrl(v) { v = String(v || '').trim(); return /^https?:\/\/[^\s]+$/i.test(v) ? v : ''; }
   function digits(v) { return String(v || '').replace(/\D/g, ''); }
-  function waLink(num, text) {
+  // Número com DDI: 12 ou 13 dígitos começando com 55 ficam como estão; 10 ou 11 ganham o 55.
+  function intl(num) {
     var n = digits(num);
-    if (n.length < 10) return '';
-    return 'https://wa.me/55' + n + (text ? '?text=' + encodeURIComponent(text) : '');
+    if ((n.length === 12 || n.length === 13) && n.indexOf('55') === 0) return n;
+    if (n.length === 10 || n.length === 11) return '55' + n;
+    return '';
+  }
+  function waLink(num, text) {
+    var n = intl(num);
+    if (!n) return '';
+    return 'https://wa.me/' + n + (text ? '?text=' + encodeURIComponent(text) : '');
+  }
+  // Telefone: com DDD vira +55...; sem DDD (8 ou 9 dígitos) disca como está.
+  function telLink(num) {
+    var n = intl(num);
+    if (n) return 'tel:+' + n;
+    n = digits(num);
+    return (n.length === 8 || n.length === 9) ? 'tel:' + n : '';
   }
   function instaLink(u) { return /^[A-Za-z0-9._]{1,30}$/.test(u || '') ? 'https://instagram.com/' + u : ''; }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
@@ -298,7 +312,8 @@
       if (F.quick === 'hoje' && !isToday(l)) return false;
       if (F.quick === 'aprovar' && !needsApproval(l)) return false;
       if (!q) return true;
-      var hay = [l.company, l.name, l.legalName, l.whatsapp, l.phone, l.instagram, l.email, l.companyEmail, l.niche, l.message]
+      var hay = [l.company, l.name, l.legalName, l.whatsapp, l.phone, l.instagram, l.email, l.companyEmail, l.niche, l.message,
+        l.cnpjEmail, l.cnpjPhone, l.linkedin, l.companyLinkedin, l.facebook, l.address, l.currentSite]
         .join(' ').toLowerCase().replace(/[()\-\s@]/g, '');
       return hay.indexOf(q) !== -1;
     }).sort(function (a, b) {
@@ -381,8 +396,8 @@
         '<td><div class="lead-cell"><span class="avatar">' + esc(initials(title(l))) + '</span><div><strong>' + esc(title(l)) + '</strong><small>' + esc(sub) + '</small></div></div></td>' +
         '<td><span class="pill" style="--c:' + st.c + '">' + st.label + '</span></td>' +
         '<td><span class="src">' + ORIGINS[originOf(l)] + (originOf(l) === 'site' && l.source ? ' · ' + esc(sourceName(l.source)) : '') + '</span></td>' +
-        '<td class="' + (isLate(l) ? 'td-late' : 'td-muted') + '">' + (l.nextStep && (l.nextStep.text || d) ? esc((l.nextStep.text || '') + (d ? ' · ' + dueLabel(d) : '')) : '–') + '</td>' +
-        '<td class="td-muted">' + (SITE_ST[l.siteStatus] || '–') + '</td>' +
+        '<td class="' + (isLate(l) ? 'td-late' : 'td-muted') + '">' + (l.nextStep && (l.nextStep.text || d) ? esc((l.nextStep.text || '') + (d ? ' · ' + dueLabel(d) : '')) : 'Sem prazo') + '</td>' +
+        '<td class="td-muted">' + (SITE_ST[l.siteStatus] || 'Não avaliado') + '</td>' +
         '<td class="td-muted">' + esc(ago(toDate(l.stageAt || l.updatedAt || l.createdAt))) + '</td>' +
       '</tr>';
     }).join('');
@@ -446,7 +461,8 @@
     $(p[0]).addEventListener('change', function () { F[p[1]] = this.value; render(); });
   });
   $('#filtersClear').addEventListener('click', function () {
-    F.niche = F.origin = F.channel = F.site = F.quick = F.etapa = '';
+    F.niche = F.origin = F.channel = F.site = F.quick = F.etapa = F.q = '';
+    $('#leadSearch').value = '';
     render();
   });
   $('#crmSettingsBtn').addEventListener('click', function () {
@@ -703,8 +719,8 @@
     if (dr.text) html += '<button class="btn btn--ghost" type="button" data-copy-draft>' + ICONS.copy + 'Copiar mensagem</button>';
     var em = l.email || l.companyEmail;
     if (em) html += '<a class="btn btn--ghost" href="mailto:' + esc(em) + '?subject=' + encodeURIComponent('Cron Web Studio') + (text && dr.channel === 'email' ? '&body=' + encodeURIComponent(text) : '') + '">' + ICONS.mail + 'E-mail</a>';
-    var tel = digits(l.phone || l.whatsapp);
-    if (tel.length >= 8) html += '<a class="btn btn--ghost" href="tel:+55' + esc(tel) + '">' + ICONS.tel + 'Ligar</a>';
+    var tel = telLink(l.phone) || telLink(l.whatsapp);
+    if (tel) html += '<a class="btn btn--ghost" href="' + esc(tel) + '">' + ICONS.tel + 'Ligar</a>';
     if (l.previewId && /^[A-Za-z0-9]{1,40}$/.test(l.previewId)) html += '<a class="btn btn--ghost" href="modelo/?id=' + esc(l.previewId) + '" target="_blank" rel="noopener">' + ICONS.preview + 'Site modelo</a>';
     $('#ldActions').innerHTML = html || '<p class="muted">Sem contato cadastrado. Preencha WhatsApp, Instagram ou e-mail abaixo.</p>';
   }
@@ -862,7 +878,7 @@
     if (!v) return '';
     if (f.link === 'url') return httpUrl(v);
     if (f.link === 'mail') return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? 'mailto:' + v : '';
-    if (f.link === 'tel') return digits(v).length >= 8 ? 'tel:+55' + digits(v) : '';
+    if (f.link === 'tel') return telLink(v);
     if (f.link === 'wa') return waLink(v, '');
     if (f.link === 'insta') return instaLink(v);
     return '';
@@ -879,7 +895,7 @@
         } else if (f.type === 'textarea' || f.type === 'lines') {
           input = '<textarea' + attrs + ' rows="2"' + (f.max ? ' maxlength="' + f.max + '"' : '') + '>' + esc(v) + '</textarea>';
         } else if (f.type === 'ro') {
-          input = '<input' + attrs + ' value="' + esc(v || '–') + '" readonly tabindex="-1">';
+          input = '<input' + attrs + ' value="' + esc(v) + '" placeholder="Vazio" readonly tabindex="-1">';
         } else {
           var t = f.type === 'email' ? 'email' : (f.type === 'url' ? 'url' : (f.type === 'digits' ? 'tel' : 'text'));
           var im = (f.type === 'int' || f.type === 'digits') ? ' inputmode="numeric"' : (f.type === 'num' ? ' inputmode="decimal"' : '');

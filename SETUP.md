@@ -19,7 +19,7 @@ Firestore Database > aba **Regras** > apague o conteúdo e cole todo o arquivo `
 O que elas fazem:
 - **projects**: qualquer visitante lê só os publicados; só o admin cria, edita e exclui.
 - **leads**: qualquer visitante pode enviar (com consentimento LGPD e campos validados); só o admin lê, edita e exclui.
-- **leads/{id}/interacoes**: histórico de cada lead; só o admin lê e cria, ninguém edita nem apaga.
+- **leads/{id}/interacoes**: histórico de cada lead; só o admin lê, cria e apaga (o painel apaga o histórico junto com o lead); ninguém edita.
 - **admins**: lista de quem pode entrar no painel.
 
 ## 3. Criar o seu acesso de admin
@@ -168,9 +168,9 @@ Leads antigos com `contato` aparecem como **Em conversa**. Para gravar a etapa n
 
 ### Campos novos em `leads`
 
-`origin` (`site` | `cronus` | `indicacao` | `manual`; sem valor = `site`), `role`, `instagram` (só o usuário), `niche` (ex.: `industria-moveis`), `city` e `state` (internos, nunca aparecem em nada público), `currentSite`, `siteStatus` (`sem_site` | `site_fraco` | `ok`), `siteScore` (0 a 10), `siteReason`, `googleRating` (0 a 5), `googleReviews`, `cnpj` (14 dígitos), `companyYears`, `phone`, `linkedin`, `companyLinkedin`, `companyEmail`, `cnpjEmail`, `cnpjPhone`, `legalName`, `googleMapsUrl`, `facebook`, `address`, `otherLinks` (até 10 links), `sources` (de onde veio cada dado, ex.: `{ whatsapp: 'google_maps' }`), `channel` (`whatsapp` | `instagram` | `email`), `fitReason`, `draft` (`{ channel, text, approved, approvedAt, sentAt }`), `previewId`, `batchId`, `owner`, `nextStep` (`{ text, dueAt }`), `meetingAt`, `lostReason`, `stageAt` (quando entrou na etapa atual) e `createdBy` (`admin` nos cadastros manuais).
+`origin` (`site` | `cronus` | `indicacao` | `manual`; sem valor = `site`), `role`, `instagram` (só o usuário), `niche` (ex.: `industria-moveis`), `city` e `state` (internos, nunca aparecem em nada público), `currentSite`, `siteStatus` (`sem_site` | `site_fraco` | `ok`), `siteScore` (0 a 10), `siteReason`, `googleRating` (0 a 5), `googleReviews`, `cnpj` (14 dígitos), `companyYears`, `phone`, `linkedin`, `companyLinkedin`, `companyEmail`, `cnpjEmail`, `cnpjPhone`, `legalName`, `googleMapsUrl`, `facebook`, `address`, `otherLinks` (até 10 links, cada um http/https), `sources` (de onde veio cada dado: a chave é o nome de um campo do lead e o valor um texto de até 40 caracteres, ex.: `{ whatsapp: 'google_maps' }`), `channel` (`whatsapp` | `instagram` | `email`), `fitReason`, `draft` (`{ channel, text, approved, approvedAt, sentAt }`), `previewId`, `batchId`, `owner`, `nextStep` (`{ text, dueAt }`), `meetingAt`, `lostReason`, `stageAt` (quando entrou na etapa atual) e `createdBy` (`admin` nos cadastros manuais).
 
-Histórico: subcoleção `leads/{id}/interacoes` com `{ type, text, channel, from, to, createdAt, createdBy }`. Tipos: `mensagem_enviada`, `resposta`, `nota`, `mudanca_etapa`, `reuniao`, `proposta`. Ninguém edita nem apaga uma interação.
+Histórico: subcoleção `leads/{id}/interacoes` com `{ type, text, channel, from, to, createdAt, createdBy }`. Tipos: `mensagem_enviada`, `resposta`, `nota`, `mudanca_etapa`, `reuniao`, `proposta`. Ninguém edita uma interação. No painel não existe botão para apagar um registro isolado: o histórico só é apagado junto com o lead, em **Excluir lead** (exclusão completa, inclusive para pedidos pela LGPD).
 
 ### Como funciona no dia a dia
 
@@ -179,6 +179,8 @@ Histórico: subcoleção `leads/{id}/interacoes` com `{ type, text, channel, fro
 - **Filtros** (etapa, nicho, origem, canal, situação do site) e busca ficam no endereço (`#crm?...`), então dá para salvar ou voltar.
 - **Mensagem de abordagem**: editar o texto sempre volta para "aguardando aprovação". O WhatsApp só abre com o texto preenchido depois de aprovado. "Marcar como enviada" grava o envio, move para Abordado e registra no histórico. **Nada é enviado sozinho.**
 - **Novo lead**: cadastro manual para indicações e contatos que chegaram fora do site.
+- **WhatsApp e telefone**: o número pode ser gravado com ou sem o 55 do Brasil (10 a 13 dígitos). O painel só acrescenta o 55 quando ele não está lá.
+- **Link direto**: abrir o painel com `#crm?...` no endereço já entra na aba CRM com os filtros aplicados.
 
 ### Modo demonstração
 

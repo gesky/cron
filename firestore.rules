@@ -7,7 +7,7 @@ rules_version = '2';
 // - leads: visitante só CRIA pelo formulário (campos validados + consentimento LGPD);
 //          o admin lê, cadastra leads manuais e edita os campos de CRM (nunca consentimento,
 //          UTM, data de criação ou de onde o lead clicou no site)
-// - leads/{id}/interacoes: histórico do lead; admin lê e cria; ninguém edita nem apaga
+// - leads/{id}/interacoes: histórico do lead; admin lê, cria e apaga (ao excluir o lead); ninguém edita
 // - admins: cada documento com o UID libera o painel (criado à mão no console)
 // - qualquer outra coleção: bloqueada
 
@@ -68,11 +68,12 @@ service cloud.firestore {
         && validCrmFields(request.resource.data);
       allow delete: if isAdmin();
 
-      // Histórico: só cresce. Nada é editado nem apagado.
+      // Histórico: ninguém edita. O admin apaga só junto com o lead (exclusão completa, LGPD).
       match /interacoes/{iid} {
         allow get, list: if isAdmin();
         allow create: if isAdmin() && validInteraction(request.resource.data);
-        allow update, delete: if false;
+        allow delete: if isAdmin();
+        allow update: if false;
       }
     }
 
@@ -168,8 +169,8 @@ service cloud.firestore {
         && (!('googleMapsUrl' in d) || url(d.googleMapsUrl))
         && (!('facebook' in d) || url(d.facebook))
         && (!('address' in d) || str(d.address, 300))
-        && (!('otherLinks' in d) || (d.otherLinks is list && d.otherLinks.size() <= 10))
-        && (!('sources' in d) || (d.sources is map && d.sources.size() <= 40))
+        && (!('otherLinks' in d) || validLinks(d.otherLinks))
+        && (!('sources' in d) || validSources(d.sources))
         && (!('channel' in d) || d.channel in ['', 'whatsapp', 'instagram', 'email'])
         && (!('fitReason' in d) || str(d.fitReason, 600))
         && (!('draft' in d) || validDraft(d.draft))
@@ -179,6 +180,35 @@ service cloud.firestore {
         && (!('nextStep' in d) || validNextStep(d.nextStep))
         && (!('meetingAt' in d) || tsOrNull(d.meetingAt))
         && (!('lostReason' in d) || str(d.lostReason, 300));
+    }
+
+    // Até 10 links, cada um http/https (as regras não têm laço, então cada posição é conferida)
+    function linkAt(l, i) { return l.size() <= i || url(l[i]); }
+    function validLinks(l) {
+      return l is list && l.size() <= 10
+        && linkAt(l, 0) && linkAt(l, 1) && linkAt(l, 2) && linkAt(l, 3) && linkAt(l, 4)
+        && linkAt(l, 5) && linkAt(l, 6) && linkAt(l, 7) && linkAt(l, 8) && linkAt(l, 9);
+    }
+
+    // De onde veio cada dado: chave = nome do campo, valor = texto curto (ex.: 'google_maps')
+    function srcOk(s, k) { return !(k in s) || str(s[k], 40); }
+    function validSources(s) {
+      return s is map
+        && s.keys().hasOnly([
+          'name', 'company', 'whatsapp', 'email', 'role', 'instagram', 'niche', 'city', 'state',
+          'currentSite', 'siteStatus', 'siteScore', 'siteReason', 'googleRating', 'googleReviews',
+          'cnpj', 'companyYears', 'phone', 'linkedin', 'companyLinkedin', 'companyEmail',
+          'cnpjEmail', 'cnpjPhone', 'legalName', 'googleMapsUrl', 'facebook', 'address',
+          'otherLinks', 'channel', 'fitReason'
+        ])
+        && srcOk(s, 'name') && srcOk(s, 'company') && srcOk(s, 'whatsapp') && srcOk(s, 'email')
+        && srcOk(s, 'role') && srcOk(s, 'instagram') && srcOk(s, 'niche') && srcOk(s, 'city')
+        && srcOk(s, 'state') && srcOk(s, 'currentSite') && srcOk(s, 'siteStatus') && srcOk(s, 'siteScore')
+        && srcOk(s, 'siteReason') && srcOk(s, 'googleRating') && srcOk(s, 'googleReviews') && srcOk(s, 'cnpj')
+        && srcOk(s, 'companyYears') && srcOk(s, 'phone') && srcOk(s, 'linkedin') && srcOk(s, 'companyLinkedin')
+        && srcOk(s, 'companyEmail') && srcOk(s, 'cnpjEmail') && srcOk(s, 'cnpjPhone') && srcOk(s, 'legalName')
+        && srcOk(s, 'googleMapsUrl') && srcOk(s, 'facebook') && srcOk(s, 'address') && srcOk(s, 'otherLinks')
+        && srcOk(s, 'channel') && srcOk(s, 'fitReason');
     }
 
     function validDraft(m) {

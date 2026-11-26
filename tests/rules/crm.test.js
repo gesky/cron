@@ -102,6 +102,15 @@ describe('edição pelo admin', () => {
     await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { googleRating: 7 }));
     await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { 'draft.extra': 1 }));
   });
+  it('valida outros links e a origem de cada dado', async () => {
+    await assertSucceeds(updateDoc(doc(admin(), 'leads', 'old'), { otherLinks: ['https://a.com', 'http://b.com.br'] }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { otherLinks: ['https://a.com', 'javascript:alert(1)'] }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { otherLinks: Array(11).fill('https://a.com') }));
+    await assertSucceeds(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: 'google_maps', cnpj: 'receita' } }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: 123 } }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: 'x'.repeat(41) } }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { inventado: 'x' } }));
+  });
   it('quem não é admin não edita', async () => {
     await assertFails(updateDoc(doc(stranger(), 'leads', 'old'), { notes: 'x' }));
   });
@@ -113,10 +122,18 @@ describe('histórico (interações)', () => {
     const ref = await assertSucceeds(addDoc(collection(admin(), 'leads', 'old', 'interacoes'), it1()));
     await assertSucceeds(getDoc(ref));
   });
-  it('ninguém edita nem apaga', async () => {
+  it('ninguém edita, nem o admin', async () => {
     const ref = await addDoc(collection(admin(), 'leads', 'old', 'interacoes'), it1());
     await assertFails(updateDoc(ref, { text: 'mudou' }));
-    await assertFails(deleteDoc(ref));
+  });
+  it('admin apaga (exclusão completa do lead)', async () => {
+    const ref = await addDoc(collection(admin(), 'leads', 'old', 'interacoes'), it1());
+    await assertSucceeds(deleteDoc(ref));
+  });
+  it('quem não é admin não apaga', async () => {
+    const ref = await addDoc(collection(admin(), 'leads', 'old', 'interacoes'), it1());
+    await assertFails(deleteDoc(doc(stranger(), 'leads', 'old', 'interacoes', ref.id)));
+    await assertFails(deleteDoc(doc(pub(), 'leads', 'old', 'interacoes', ref.id)));
   });
   it('não aceita tipo desconhecido nem autor diferente de admin', async () => {
     await assertFails(addDoc(collection(admin(), 'leads', 'old', 'interacoes'), Object.assign(it1(), { type: 'spam' })));
