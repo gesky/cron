@@ -13,6 +13,7 @@
   <link rel="preload" href="fonts/sora-600.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/admin.css">
+  <link rel="stylesheet" href="css/admin-crm.css">
 </head>
 <body>
 
@@ -65,7 +66,7 @@
       <nav class="side__nav">
         <button class="side__link is-active" data-tab="leads">
           <svg viewBox="0 0 24 24"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19M10 10.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM20 19v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 3.65a3.5 3.5 0 0 1 0 6.7"/></svg>
-          Leads <span class="badge" id="newBadge" hidden>0</span>
+          CRM <span class="badge" id="newBadge" hidden aria-label="mensagens aguardando aprovação">0</span>
         </button>
         <button class="side__link" data-tab="projects">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2.5"/><path d="M3 9h18M8 21h8"/></svg>
@@ -81,56 +82,86 @@
 
     <main class="main">
 
-      <!-- ===================== LEADS ===================== -->
+      <!-- ===================== CRM ===================== -->
       <section class="tab" id="tab-leads">
         <header class="top">
           <div>
-            <p class="top__eyebrow">Gerenciamento</p>
-            <h1>Leads</h1>
+            <p class="top__eyebrow">Comercial</p>
+            <h1>CRM</h1>
           </div>
-          <button class="btn btn--ghost" id="exportCsv">
-            <svg viewBox="0 0 24 24"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14"/></svg>
-            Exportar CSV
-          </button>
+          <div class="top__actions">
+            <button class="icon-btn" id="crmSettingsBtn" aria-label="Configurações do CRM" aria-expanded="false" aria-controls="crmSettings">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+            </button>
+            <button class="btn btn--ghost" id="exportCsv"><svg viewBox="0 0 24 24"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 20h14"/></svg><span class="hide-m">Exportar </span>CSV</button>
+            <button class="btn btn--lime" id="newLead"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Novo lead</button>
+          </div>
         </header>
 
-        <div class="kpis">
-          <div class="kpi"><span>Total</span><strong id="kTotal">0</strong></div>
-          <div class="kpi kpi--lime"><span>Novos</span><strong id="kNew">0</strong></div>
-          <div class="kpi"><span>Este mês</span><strong id="kMonth">0</strong></div>
-          <div class="kpi"><span>Fechados</span><strong id="kWon">0</strong><em id="kRate">0% de conversão</em></div>
+        <div class="panel crm-settings" id="crmSettings" hidden>
+          <h2>Configurações</h2>
+          <p class="muted">Leads antigos com a etapa "contato" já aparecem como "Em conversa". Este botão grava a etapa nova no banco. Pode rodar mais de uma vez, não apaga nada.</p>
+          <div class="row-start">
+            <button class="btn btn--ghost" id="migrateBtn">Atualizar etapas antigas</button>
+            <span class="muted" id="migrateInfo" aria-live="polite"></span>
+          </div>
         </div>
 
-        <div class="leads-grid">
-          <div class="panel">
-            <div class="toolbar">
-              <div class="filters" id="statusFilters"></div>
-              <label class="search">
-                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
-                <input type="search" id="leadSearch" placeholder="Buscar nome, WhatsApp, empresa">
-              </label>
-            </div>
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr><th>Lead</th><th>WhatsApp</th><th>Origem</th><th>Status</th><th>Recebido</th></tr>
-                </thead>
-                <tbody id="leadRows"></tbody>
-              </table>
-              <div class="empty" id="leadsEmpty" hidden>
-                <img src="img/cron-icon.svg" alt="">
-                <p>Nenhum lead por aqui ainda.</p>
-              </div>
-            </div>
-          </div>
+        <div class="crm-alerts" id="crmAlerts">
+          <button class="alert-card alert-card--late" data-quick="vencidos" aria-pressed="false"><strong id="kLate">0</strong><span>Próximos passos vencidos</span></button>
+          <button class="alert-card" data-quick="hoje" aria-pressed="false"><strong id="kToday">0</strong><span>Para hoje</span></button>
+          <div class="alert-card alert-card--info"><strong id="kSent">0</strong><span>Abordagens hoje</span></div>
+          <button class="alert-card alert-card--lime" data-quick="aprovar" aria-pressed="false"><strong id="kApprove">0</strong><span>Mensagens para aprovar</span></button>
+        </div>
 
-          <aside class="panel panel--side">
-            <h2>De onde vêm</h2>
-            <p class="muted">Qual botão do site mais gera contato.</p>
-            <ol class="sources" id="sourceList"></ol>
-            <h2 class="mt">Funil</h2>
-            <div class="funnel" id="funnel"></div>
-          </aside>
+        <div class="crm-stages" id="crmStages" role="group" aria-label="Filtrar por etapa"></div>
+
+        <div class="crm-bar">
+          <div class="viewsw" role="group" aria-label="Visão">
+            <button data-view="board" aria-pressed="true">Quadro</button>
+            <button data-view="list" aria-pressed="false">Lista</button>
+            <button data-view="sources" aria-pressed="false">Origens</button>
+          </div>
+          <label class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>
+            <input type="search" id="leadSearch" placeholder="Buscar empresa, contato, WhatsApp, Instagram, e-mail" aria-label="Buscar leads">
+          </label>
+          <button class="btn btn--ghost" id="filtersToggle" aria-expanded="false" aria-controls="crmFilters">
+            <svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Filtros<b class="fcount" id="filtersCount" hidden>0</b>
+          </button>
+        </div>
+
+        <div class="panel crm-filters" id="crmFilters" hidden>
+          <label class="f"><span>Nicho</span><select id="fNiche"></select></label>
+          <label class="f"><span>Origem</span><select id="fOrigin"></select></label>
+          <label class="f"><span>Canal</span><select id="fChannel"></select></label>
+          <label class="f"><span>Situação do site</span><select id="fSite"></select></label>
+          <button class="btn-text" id="filtersClear" type="button">Limpar filtros</button>
+        </div>
+
+        <div class="board" id="crmBoard" aria-live="polite"></div>
+
+        <div class="panel" id="crmList" hidden>
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr><th>Lead</th><th>Etapa</th><th>Origem</th><th>Próximo passo</th><th>Site</th><th>Na etapa</th></tr>
+              </thead>
+              <tbody id="leadRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="crm-sources" id="crmSources" hidden>
+          <div class="panel"><h2>De onde vêm</h2><p class="muted">Qual botão do site mais gera contato.</p><ol class="sources" id="sourceList"></ol></div>
+          <div class="panel"><h2>Por origem</h2><p class="muted">Site, CronUS, indicação ou cadastro manual.</p><ol class="sources" id="originList"></ol></div>
+          <div class="panel"><h2>Funil</h2><div class="funnel" id="funnel"></div></div>
+          <div class="panel"><h2>Motivos de perda</h2><ol class="sources" id="lostList"></ol></div>
+        </div>
+
+        <div class="empty empty--panel" id="leadsEmpty" hidden>
+          <img src="img/cron-icon.svg" alt="">
+          <p>Nenhum lead por aqui ainda.</p>
         </div>
       </section>
 
@@ -158,52 +189,110 @@
   </div>
 
   <!-- ===================== GAVETA: LEAD ===================== -->
-  <div class="drawer" id="leadDrawer" hidden>
+  <div class="drawer drawer--lead" id="leadDrawer" hidden>
     <div class="drawer__backdrop" data-close></div>
     <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="ldName">
       <header class="drawer__head">
-        <div>
+        <div class="ld-head">
           <p class="top__eyebrow" id="ldDate"></p>
           <h2 id="ldName"></h2>
+          <p class="ld-sub" id="ldSub"></p>
         </div>
         <button class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </header>
       <div class="drawer__body">
-        <div class="ld-actions">
-          <a class="btn btn--lime" id="ldWhats" target="_blank" rel="noopener">
-            <svg viewBox="0 0 24 24"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 18.8L4 20Z"/></svg>
-            Chamar no WhatsApp
-          </a>
-          <a class="btn btn--ghost" id="ldEmail">E-mail</a>
+        <div class="ld-view" id="ldView">
+          <div class="ld-actions" id="ldActions"></div>
+
+          <div class="ld-stage">
+            <label class="f"><span>Etapa</span><select id="ldStage"></select></label>
+            <p class="ld-lost" id="ldLost" hidden></p>
+          </div>
+
+          <section class="ld-box" aria-labelledby="ldNextTitle">
+            <h3 id="ldNextTitle">Próximo passo</h3>
+            <div class="grid-next">
+              <label class="f"><span>O que fazer</span><input id="ldNextText" maxlength="300" placeholder="Ex.: mandar exemplos de catálogo"></label>
+              <label class="f"><span>Quando</span><input id="ldNextDue" type="datetime-local"></label>
+            </div>
+            <label class="f"><span>Reunião marcada</span><input id="ldMeeting" type="datetime-local"></label>
+            <div class="row-end">
+              <button class="btn-text" id="ldNextDone" type="button">Concluir próximo passo</button>
+              <button class="btn btn--dark" id="ldNextSave" type="button">Salvar</button>
+            </div>
+          </section>
+
+          <section class="ld-box ld-draft" id="ldDraft" aria-labelledby="ldDraftTitle">
+            <div class="ld-box__head">
+              <h3 id="ldDraftTitle">Mensagem de abordagem</h3>
+              <span class="draft-state" id="ldDraftState"></span>
+            </div>
+            <div class="seg seg--sm" id="ldDraftChannel" role="group" aria-label="Canal da mensagem"></div>
+            <label class="f"><span class="sr-only">Texto da mensagem</span><textarea id="ldDraftText" rows="6" maxlength="2000" placeholder="Escreva ou ajuste a mensagem antes de aprovar."></textarea></label>
+            <div class="ld-draft__actions">
+              <button class="btn btn--ghost" id="ldDraftSave" type="button">Salvar texto</button>
+              <button class="btn btn--lime" id="ldDraftApprove" type="button">Aprovar mensagem</button>
+              <button class="btn btn--dark" id="ldDraftSent" type="button">Marcar como enviada</button>
+            </div>
+            <p class="muted ld-hint">Nada é enviado sozinho. Depois de aprovar, use os botões acima para abrir o WhatsApp, o Instagram ou copiar o texto.</p>
+          </section>
+
+          <section class="ld-box" aria-labelledby="ldTlTitle">
+            <h3 id="ldTlTitle">Histórico</h3>
+            <div class="tl-new">
+              <label class="f"><span class="sr-only">Nova anotação</span><textarea id="ldNoteNew" rows="2" maxlength="2000" placeholder="Registrar uma nota, resposta ou ligação"></textarea></label>
+              <div class="tl-new__row">
+                <select id="ldNoteType" aria-label="Tipo de registro">
+                  <option value="nota">Nota</option>
+                  <option value="resposta">Resposta do lead</option>
+                  <option value="reuniao">Reunião</option>
+                  <option value="proposta">Proposta</option>
+                </select>
+                <button class="btn btn--dark" id="ldNoteAdd" type="button">Adicionar</button>
+              </div>
+            </div>
+            <ol class="timeline" id="ldTimeline"></ol>
+          </section>
         </div>
 
-        <label class="f">
-          <span>Status</span>
-          <div class="seg" id="ldStatus"></div>
-        </label>
+        <form class="ld-form" id="ldForm" novalidate>
+          <div class="ld-create" id="ldCreate" hidden>
+            <div class="grid2">
+              <label class="f"><span>Origem</span><select name="createOrigin" id="ldCreateOrigin"><option value="manual">Cadastro manual</option><option value="indicacao">Indicação</option></select></label>
+              <label class="f"><span>Etapa inicial</span><select name="createStatus" id="ldCreateStage"></select></label>
+            </div>
+          </div>
+          <div id="ldFields"></div>
+          <p class="form-msg" id="ldFormMsg" role="alert"></p>
+          <div class="row-end ld-form__save">
+            <span class="saved" id="ldSaved" aria-live="polite"></span>
+            <button class="btn btn--lime" id="ldSave" type="submit">Salvar dados</button>
+          </div>
+        </form>
 
-        <dl class="facts" id="ldFacts"></dl>
+        <div class="ld-view" id="ldView2">
+          <div class="ld-msg" id="ldMsgWrap">
+            <span class="label">Mensagem enviada pelo site</span>
+            <p id="ldMsg"></p>
+          </div>
+          <dl class="facts" id="ldFacts"></dl>
 
-        <div class="ld-msg" id="ldMsgWrap">
-          <span class="label">Mensagem</span>
-          <p id="ldMsg"></p>
+          <label class="f">
+            <span>Anotações internas</span>
+            <textarea id="ldNotes" rows="4" maxlength="5000" placeholder="Ex.: prefere falar depois das 14h."></textarea>
+          </label>
+          <div class="row-end">
+            <span class="saved" id="ldNotesSaved" aria-live="polite"></span>
+            <button class="btn btn--dark" id="ldSaveNotes" type="button">Salvar anotações</button>
+          </div>
+
+          <details class="consent-box" id="ldConsentBox">
+            <summary>Registro de consentimento (LGPD)</summary>
+            <p id="ldConsent"></p>
+          </details>
+
+          <button class="btn-danger" id="ldDelete" type="button">Excluir lead</button>
         </div>
-
-        <label class="f">
-          <span>Anotações internas</span>
-          <textarea id="ldNotes" rows="5" placeholder="Ex.: liguei dia 12, pediu proposta até sexta."></textarea>
-        </label>
-        <div class="row-end">
-          <span class="saved" id="ldSaved"></span>
-          <button class="btn btn--dark" id="ldSaveNotes">Salvar anotações</button>
-        </div>
-
-        <details class="consent-box">
-          <summary>Registro de consentimento (LGPD)</summary>
-          <p id="ldConsent"></p>
-        </details>
-
-        <button class="btn-danger" id="ldDelete">Excluir lead</button>
       </div>
     </aside>
   </div>
@@ -307,6 +396,20 @@
     </div>
   </div>
 
+  <!-- Pergunta com campo de texto -->
+  <div class="confirm" id="promptDlg" hidden>
+    <div class="confirm__card" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
+      <h3 id="promptTitle"></h3>
+      <p id="promptText"></p>
+      <label class="f prompt-f"><span class="sr-only">Resposta</span><input id="promptInput"></label>
+      <p class="form-msg" id="promptMsg" role="alert"></p>
+      <div class="confirm__actions">
+        <button class="btn btn--ghost" id="promptNo">Cancelar</button>
+        <button class="btn btn--dark" id="promptYes">Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="js/vendor/firebase-app-compat.js"></script>
@@ -315,5 +418,6 @@
   <script src="js/vendor/firebase-firestore-compat.js"></script>
   <script src="js/firebase-config.js"></script>
   <script src="js/admin.js"></script>
+  <script src="js/admin-crm.js"></script>
 </body>
 </html>

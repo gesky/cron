@@ -19,6 +19,7 @@ Firestore Database > aba **Regras** > apague o conteúdo e cole todo o arquivo `
 O que elas fazem:
 - **projects**: qualquer visitante lê só os publicados; só o admin cria, edita e exclui.
 - **leads**: qualquer visitante pode enviar (com consentimento LGPD e campos validados); só o admin lê, edita e exclui.
+- **leads/{id}/interacoes**: histórico de cada lead; só o admin lê e cria, ninguém edita nem apaga.
 - **admins**: lista de quem pode entrar no painel.
 
 ## 3. Criar o seu acesso de admin
@@ -125,6 +126,7 @@ css/fonts.css               fonte Sora local
 css/style.css               landing + formulário + cursor
 css/motion.css              animação do painel
 css/admin.css               painel
+css/admin-crm.css           CRM do painel (quadro, cartões, gaveta do lead)
 fonts/                      arquivos da Sora
 js/early.js, js/intro.js    marcação inicial e abertura 3D
 js/firebase-config.js       chaves do Firebase (+ App Check opcional)
@@ -133,11 +135,61 @@ js/projects.js              projetos dinâmicos na landing
 js/lead-form.js             formulário de lead
 js/cursor.js                cursor personalizado
 js/globe.js, globe-data.js  globo do hero
-js/admin.js                 painel
+js/admin.js                 núcleo do painel (login, abas, dados, projetos) e window.CRON_ADMIN
+js/admin-crm.js             aba CRM
 js/vendor/                  Firebase e Lenis hospedados no site
 firestore.rules             regras de segurança (colar no console)
+tests/                      testes das regras no emulador (não vão para o banco real)
 ```
 
 ## Origem dos leads
 
 Cada botão do site tem um `data-cta` que vira a "origem" do lead no painel (ex.: `hero-primary`, `plano-sistema`, `case-meccal`). Assim o ranking **De onde vêm** mostra qual botão converte mais. UTMs da URL (`?utm_source=instagram`) também são salvas.
+
+## CRM (aba "CRM" do painel)
+
+A antiga aba Leads virou o CRM. Os leads do formulário continuam entrando do mesmo jeito; tudo o que é novo é opcional e convive com os leads antigos.
+
+### Etapas
+
+| Valor no banco | No painel |
+|---|---|
+| `novo` | Novo |
+| `mensagem_pronta` | Mensagem pronta (aguardando aprovação) |
+| `abordado` | Abordado |
+| `respondeu` | Respondeu |
+| `em_conversa` | Em conversa |
+| `reuniao` | Reunião marcada |
+| `proposta` | Proposta enviada |
+| `fechado` | Fechado |
+| `perdido` | Perdido (pede o motivo) |
+
+Leads antigos com `contato` aparecem como **Em conversa**. Para gravar a etapa nova no banco, use o botão de engrenagem no topo do CRM, **Atualizar etapas antigas**. Ele roda em lotes, pode ser usado mais de uma vez e não apaga nada. Essa troca técnica não gera registro no histórico; as mudanças de etapa feitas à mão geram.
+
+### Campos novos em `leads`
+
+`origin` (`site` | `cronus` | `indicacao` | `manual`; sem valor = `site`), `role`, `instagram` (só o usuário), `niche` (ex.: `industria-moveis`), `city` e `state` (internos, nunca aparecem em nada público), `currentSite`, `siteStatus` (`sem_site` | `site_fraco` | `ok`), `siteScore` (0 a 10), `siteReason`, `googleRating` (0 a 5), `googleReviews`, `cnpj` (14 dígitos), `companyYears`, `phone`, `linkedin`, `companyLinkedin`, `companyEmail`, `cnpjEmail`, `cnpjPhone`, `legalName`, `googleMapsUrl`, `facebook`, `address`, `otherLinks` (até 10 links), `sources` (de onde veio cada dado, ex.: `{ whatsapp: 'google_maps' }`), `channel` (`whatsapp` | `instagram` | `email`), `fitReason`, `draft` (`{ channel, text, approved, approvedAt, sentAt }`), `previewId`, `batchId`, `owner`, `nextStep` (`{ text, dueAt }`), `meetingAt`, `lostReason`, `stageAt` (quando entrou na etapa atual) e `createdBy` (`admin` nos cadastros manuais).
+
+Histórico: subcoleção `leads/{id}/interacoes` com `{ type, text, channel, from, to, createdAt, createdBy }`. Tipos: `mensagem_enviada`, `resposta`, `nota`, `mudanca_etapa`, `reuniao`, `proposta`. Ninguém edita nem apaga uma interação.
+
+### Como funciona no dia a dia
+
+- **Quadro ou Lista**: o painel lembra a última visão. No celular, as colunas rolam para o lado e cada cartão tem um seletor de etapa (no computador também dá para arrastar).
+- **Destaques**: próximos passos vencidos, para hoje, abordagens feitas hoje (mensagens marcadas como enviadas no dia) e mensagens para aprovar. O número verde no menu é o de mensagens aguardando aprovação.
+- **Filtros** (etapa, nicho, origem, canal, situação do site) e busca ficam no endereço (`#crm?...`), então dá para salvar ou voltar.
+- **Mensagem de abordagem**: editar o texto sempre volta para "aguardando aprovação". O WhatsApp só abre com o texto preenchido depois de aprovado. "Marcar como enviada" grava o envio, move para Abordado e registra no histórico. **Nada é enviado sozinho.**
+- **Novo lead**: cadastro manual para indicações e contatos que chegaram fora do site.
+
+### Modo demonstração
+
+Abra `admin.html?demo` no computador (arquivo local ou `localhost`). Funciona mesmo com o Firebase configurado e não grava nada no banco.
+
+### Testar as regras (opcional, no seu computador)
+
+Precisa de Node e Java. Os testes usam o emulador local com um projeto fictício e nunca tocam no banco real:
+
+```
+cd tests
+npm install
+npm test
+```
