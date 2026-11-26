@@ -1,8 +1,9 @@
-// Cron Web Studio · Painel administrativo
-// Projetos (1 a 4, imagens em WebP dentro do Firestore) + gerenciamento de leads.
+// Cron Web Studio · Painel administrativo (núcleo)
+// Login, abas, gavetas, utilitários, camada de dados e Projetos (1 a 4, imagens em WebP).
+// O CRM fica em js/admin-crm.js e usa o que este arquivo expõe em window.CRON_ADMIN.
 //
 // Modo demonstração: abra admin.html?demo no computador (file:// ou localhost)
-// para ver o painel com dados de exemplo, sem Firebase.
+// para ver o painel com dados de exemplo, sem tocar no Firebase.
 
 (function () {
   'use strict';
@@ -19,42 +20,6 @@
   var MAX = C.MAX_PROJECTS || 4;
   var IMG_MAX_CHARS = 700000;   // ~510 KB de WebP; documento do Firestore aceita até 1 MiB
   var IMG_MAX_DIM = 1600;
-
-  var STATUS = [
-    { id: 'novo', label: 'Novo', c: 'var(--st-novo)' },
-    { id: 'contato', label: 'Em contato', c: 'var(--st-contato)' },
-    { id: 'proposta', label: 'Proposta', c: 'var(--st-proposta)' },
-    { id: 'fechado', label: 'Fechado', c: 'var(--st-fechado)' },
-    { id: 'perdido', label: 'Perdido', c: 'var(--st-perdido)' }
-  ];
-  var STATUS_BY = {};
-  STATUS.forEach(function (s) { STATUS_BY[s.id] = s; });
-
-  var NEED = { institucional: 'Site institucional', sistema: 'Sistema ou painel', 'nao-sei': 'Ainda não sei' };
-
-  var SOURCES = {
-    'hero-primary': 'Hero · botão principal',
-    'hero-secondary': 'Hero · botão secundário',
-    'header': 'Header',
-    'nav-mobile': 'Menu mobile',
-    'manifesto': 'Manifesto',
-    'painel': 'Seção painel',
-    'plano-institucional': 'Plano institucional',
-    'plano-sistema': 'Plano sistema',
-    'processo': 'Processo',
-    'final-whatsapp': 'CTA final',
-    'final-projetos': 'CTA final · projetos',
-    'float-whatsapp': 'Botão flutuante',
-    'footer-whatsapp': 'Rodapé',
-    'direto': 'Direto'
-  };
-  function sourceName(s) {
-    if (!s) return 'Direto';
-    if (SOURCES[s]) return SOURCES[s];
-    if (s.indexOf('case-') === 0) return 'Projeto · ' + humanize(s.slice(5));
-    return humanize(s);
-  }
-  function humanize(s) { s = String(s).replace(/-/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
 
   // ---------- Utilidades ----------
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -136,6 +101,41 @@
     });
   }
 
+  // Pergunta com campo de texto (ex.: motivo de perda). Resolve com o texto ou null.
+  function promptBox(title, text, opts) {
+    opts = opts || {};
+    return new Promise(function (resolve) {
+      var box = $('#promptDlg');
+      var input = $('#promptInput');
+      var msg = $('#promptMsg');
+      $('#promptTitle').textContent = title;
+      $('#promptText').textContent = text || '';
+      $('#promptYes').textContent = opts.yes || 'Salvar';
+      input.value = opts.value || '';
+      input.placeholder = opts.placeholder || '';
+      input.maxLength = opts.max || 300;
+      msg.textContent = '';
+      box.hidden = false;
+      setTimeout(function () { input.focus(); }, 30);
+      function done(v) {
+        box.hidden = true;
+        $('#promptYes').onclick = $('#promptNo').onclick = null;
+        box.onkeydown = null;
+        resolve(v);
+      }
+      $('#promptYes').onclick = function () {
+        var v = input.value.trim();
+        if (opts.required && v.length < 2) { msg.textContent = opts.requiredMsg || 'Preencha o campo.'; input.focus(); return; }
+        done(v);
+      };
+      $('#promptNo').onclick = function () { done(null); };
+      box.onkeydown = function (e) {
+        if (e.key === 'Escape') { e.stopPropagation(); done(null); }
+        if (e.key === 'Enter' && !e.shiftKey && input.tagName !== 'TEXTAREA') { e.preventDefault(); $('#promptYes').click(); }
+      };
+    });
+  }
+
   function showView(id) {
     ['view-loading', 'view-setup', 'view-login', 'view-denied', 'view-app'].forEach(function (v) {
       document.getElementById(v).hidden = v !== id;
@@ -146,25 +146,102 @@
   // Camada de dados: Firestore de verdade ou memória (modo demo)
   // =================================================================
   var isLocal = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  var demo = !C.configured && isLocal && /[?&]demo\b/.test(location.search);
+  // ?demo só funciona no computador (file:// ou localhost), mesmo com o Firebase configurado:
+  // nada do modo demo grava no banco de verdade.
+  var demo = isLocal && /[?&]demo\b/.test(location.search);
   var api;
 
-  if (C.configured && C.db) {
+  if (C.configured && C.db && !demo) {
     var db = C.db;
     var FV = firebase.firestore.FieldValue;
+    var leadsCol = db.collection('leads');
+    // Interações sempre gravadas no mesmo batch da mudança no lead
+    var addInter = function (batch, leadRef, list) {
+      (list || []).forEach(function (it) {
+        batch.set(leadRef.collection('interacoes').doc(), {
+          type: it.type, text: it.text || '', channel: it.channel || '',
+          from: it.from || '', to: it.to || '',
+          createdAt: FV.serverTimestamp(), createdBy: 'admin'
+        });
+      });
+    };
     api = {
+      now: function () { return FV.serverTimestamp(); },
+      del: function () { return FV.delete(); },
       watchLeads: function (cb, onErr) {
-        return db.collection('leads').orderBy('createdAt', 'desc').onSnapshot(function (snap) {
+        return leadsCol.orderBy('createdAt', 'desc').onSnapshot(function (snap) {
           var list = [];
           snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
           cb(list);
         }, onErr);
       },
-      updateLead: function (id, data) {
+      // data aceita caminhos com ponto ('draft.approved'); inters: lista de interações
+      updateLead: function (id, data, inters) {
         data.updatedAt = FV.serverTimestamp();
-        return db.collection('leads').doc(id).update(data);
+        var ref = leadsCol.doc(id);
+        var batch = db.batch();
+        batch.update(ref, data);
+        addInter(batch, ref, inters);
+        return batch.commit();
       },
-      deleteLead: function (id) { return db.collection('leads').doc(id).delete(); },
+      createLead: function (data, inters) {
+        var ref = leadsCol.doc();
+        data.createdAt = FV.serverTimestamp();
+        data.stageAt = FV.serverTimestamp();
+        data.createdBy = 'admin';
+        var batch = db.batch();
+        batch.set(ref, data);
+        addInter(batch, ref, inters);
+        return batch.commit().then(function () { return ref.id; });
+      },
+      // Exclusão completa (LGPD): primeiro o histórico, em lotes de até 400, depois o lead
+      deleteLead: function (id) {
+        var ref = leadsCol.doc(id);
+        return ref.collection('interacoes').get().then(function (snap) {
+          var docs = snap.docs, chain = Promise.resolve();
+          for (var i = 0; i < docs.length; i += 400) {
+            (function (part, last) {
+              chain = chain.then(function () {
+                var b = db.batch();
+                part.forEach(function (d) { b.delete(d.ref); });
+                if (last) b.delete(ref);
+                return b.commit();
+              });
+            })(docs.slice(i, i + 400), i + 400 >= docs.length);
+          }
+          if (!docs.length) chain = chain.then(function () { return ref.delete(); });
+          return chain;
+        });
+      },
+      watchInteractions: function (id, cb, onErr) {
+        return leadsCol.doc(id).collection('interacoes').orderBy('createdAt', 'desc').limit(100)
+          .onSnapshot(function (snap) {
+            var list = [];
+            snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
+            cb(list);
+          }, onErr);
+      },
+      addInteraction: function (id, it) {
+        var batch = db.batch();
+        addInter(batch, leadsCol.doc(id), [it]);
+        return batch.commit();
+      },
+      // Troca o status antigo 'contato' por 'em_conversa'. Em lotes, pode rodar quantas vezes quiser.
+      migrateLegacyStatus: function () {
+        return leadsCol.where('status', '==', 'contato').get().then(function (snap) {
+          var docs = snap.docs, chain = Promise.resolve();
+          for (var i = 0; i < docs.length; i += 400) {
+            (function (part) {
+              chain = chain.then(function () {
+                var b = db.batch();
+                part.forEach(function (d) { b.update(d.ref, { status: 'em_conversa', updatedAt: FV.serverTimestamp() }); });
+                return b.commit();
+              });
+            })(docs.slice(i, i + 400));
+          }
+          return chain.then(function () { return docs.length; });
+        });
+      },
       listProjects: function () {
         return db.collection('projects').get().then(function (snap) {
           var list = [];
@@ -188,6 +265,26 @@
   } else if (demo) {
     api = demoApi();
   }
+
+  // =================================================================
+  // Ponte para os módulos (CRM e os próximos): utilitários e dados num só lugar
+  // =================================================================
+  var modules = [];
+  var started = false;
+  window.CRON_ADMIN = {
+    api: api || null,
+    demo: demo,
+    $: $, $$: $$, esc: esc, toDate: toDate, fmtDate: fmtDate, ago: ago,
+    fmtPhone: fmtPhone, initials: initials, firstName: firstName, safeUrl: safeUrl,
+    toast: toast, confirmBox: confirmBox, promptBox: promptBox,
+    openDrawer: openDrawer, closeDrawer: closeDrawer,
+    setTab: function (t) { setTab(t); },
+    // Cada módulo chama register({ start, stop, onTab }). Se o painel já abriu, começa na hora.
+    register: function (m) {
+      modules.push(m);
+      if (started && m.start) m.start();
+    }
+  };
 
   // =================================================================
   // Inicialização e login
@@ -252,8 +349,6 @@
   // =================================================================
   // App
   // =================================================================
-  var started = false;
-  var unsubLeads = null;
 
   // Sai sozinho depois de 45 min sem uso
   var idleTimer = null;
@@ -273,16 +368,14 @@
     started = true;
     var saved = '';
     try { saved = localStorage.getItem('cron_admin_tab') || ''; } catch (e) {}
+    // Link direto para o CRM (#crm?...) sempre abre a aba CRM
+    if (location.hash.indexOf('#crm') === 0) saved = 'leads';
     setTab(saved === 'projects' ? 'projects' : 'leads');
-    unsubLeads = api.watchLeads(onLeads, function (err) {
-      console.error(err);
-      toast('Não foi possível carregar os leads.', true);
-    });
+    modules.forEach(function (m) { if (m.start) m.start(); });
     loadProjects();
   }
   function stopApp() {
-    if (unsubLeads) unsubLeads();
-    unsubLeads = null;
+    modules.forEach(function (m) { if (m.stop) m.stop(); });
     started = false;
   }
 
@@ -292,236 +385,11 @@
     $('#tab-leads').hidden = tab !== 'leads';
     $('#tab-projects').hidden = tab !== 'projects';
     try { localStorage.setItem('cron_admin_tab', tab); } catch (e) {}
+    modules.forEach(function (m) { if (m.onTab) m.onTab(tab); });
     window.scrollTo(0, 0);
   }
   $$('.side__link').forEach(function (b) {
     b.addEventListener('click', function () { setTab(b.dataset.tab); });
-  });
-
-  // =================================================================
-  // LEADS
-  // =================================================================
-  var leads = [];
-  var filter = 'todos';
-  var query = '';
-  var openLeadId = null;
-
-  function onLeads(list) {
-    leads = list;
-    renderLeads();
-    if (openLeadId) {
-      var l = leads.find(function (x) { return x.id === openLeadId; });
-      if (l) fillLead(l, true); else closeDrawer($('#leadDrawer'));
-    }
-  }
-
-  function renderLeads() {
-    var now = new Date();
-    var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    var counts = { todos: leads.length };
-    STATUS.forEach(function (s) { counts[s.id] = 0; });
-    var month = 0;
-    leads.forEach(function (l) {
-      var st = STATUS_BY[l.status] ? l.status : 'novo';
-      counts[st]++;
-      var d = toDate(l.createdAt);
-      if (!d || d >= monthStart) month++;
-    });
-
-    // KPIs
-    $('#kTotal').textContent = leads.length;
-    $('#kNew').textContent = counts.novo;
-    $('#kMonth').textContent = month;
-    $('#kWon').textContent = counts.fechado;
-    var rate = leads.length ? Math.round(counts.fechado / leads.length * 100) : 0;
-    $('#kRate').textContent = rate + '% de conversão';
-
-    var badge = $('#newBadge');
-    badge.hidden = !counts.novo;
-    badge.textContent = counts.novo;
-    document.title = (counts.novo ? '(' + counts.novo + ') ' : '') + 'Painel | Cron Web Studio';
-
-    // Filtros
-    var fHtml = '<button class="filter' + (filter === 'todos' ? ' is-active' : '') + '" data-f="todos">Todos <b>' + counts.todos + '</b></button>';
-    STATUS.forEach(function (s) {
-      fHtml += '<button class="filter' + (filter === s.id ? ' is-active' : '') + '" data-f="' + s.id + '">' + s.label + ' <b>' + counts[s.id] + '</b></button>';
-    });
-    $('#statusFilters').innerHTML = fHtml;
-
-    // Tabela
-    var rows = filtered();
-    $('#leadRows').innerHTML = rows.map(function (l) {
-      var st = STATUS_BY[l.status] || STATUS_BY.novo;
-      var d = toDate(l.createdAt);
-      var sub = [l.company, NEED[l.need]].filter(Boolean).join(' · ') || (l.email || '');
-      return '<tr data-id="' + esc(l.id) + '" class="' + (st.id === 'novo' ? 'is-new' : '') + '">' +
-        '<td><div class="lead-cell"><span class="avatar">' + esc(initials(l.name)) + '</span><div><strong>' + esc(l.name) + '</strong><small>' + esc(sub) + '</small></div></div></td>' +
-        '<td>' + esc(fmtPhone(l.whatsapp)) + '</td>' +
-        '<td><span class="src">' + esc(sourceName(l.source)) + '</span></td>' +
-        '<td><span class="pill" style="--c:' + st.c + '">' + st.label + '</span></td>' +
-        '<td class="td-muted" title="' + esc(fmtDate(d, true)) + '">' + ago(d) + '</td>' +
-      '</tr>';
-    }).join('');
-    $('#leadsEmpty').hidden = rows.length > 0;
-    $('#leadsEmpty p').textContent = leads.length ? 'Nenhum lead com esse filtro.' : 'Nenhum lead por aqui ainda. Quando alguém preencher o formulário do site, ele aparece aqui na hora.';
-
-    // Origens
-    var bySrc = {};
-    leads.forEach(function (l) { var k = l.source || 'direto'; bySrc[k] = (bySrc[k] || 0) + 1; });
-    var srcList = Object.keys(bySrc).map(function (k) { return { k: k, n: bySrc[k] }; })
-      .sort(function (a, b) { return b.n - a.n; }).slice(0, 7);
-    var top = srcList.length ? srcList[0].n : 1;
-    $('#sourceList').innerHTML = srcList.length ? srcList.map(function (s) {
-      return '<li><div class="row"><span>' + esc(sourceName(s.k)) + '</span><b>' + s.n + '</b></div><div class="bar"><i style="width:' + Math.round(s.n / top * 100) + '%"></i></div></li>';
-    }).join('') : '<li class="none">Sem dados ainda.</li>';
-
-    // Funil
-    $('#funnel').innerHTML = STATUS.map(function (s) {
-      return '<div><span style="--c:' + s.c + '">' + s.label + '</span><b>' + counts[s.id] + '</b></div>';
-    }).join('');
-  }
-
-  function filtered() {
-    var q = query.toLowerCase().replace(/[()\-\s]/g, '');
-    return leads.filter(function (l) {
-      var st = STATUS_BY[l.status] ? l.status : 'novo';
-      if (filter !== 'todos' && st !== filter) return false;
-      if (!q) return true;
-      var hay = [l.name, l.whatsapp, l.company, l.email, l.message].join(' ').toLowerCase().replace(/[()\-\s]/g, '');
-      return hay.indexOf(q) !== -1;
-    });
-  }
-
-  $('#statusFilters').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-f]');
-    if (!b) return;
-    filter = b.dataset.f;
-    renderLeads();
-  });
-  $('#leadSearch').addEventListener('input', function () { query = this.value.trim(); renderLeads(); });
-  $('#leadRows').addEventListener('click', function (e) {
-    var tr = e.target.closest('tr[data-id]');
-    if (tr) openLead(tr.dataset.id);
-  });
-
-  // ---------- Gaveta do lead ----------
-  var leadDrawer = $('#leadDrawer');
-
-  function openLead(id) {
-    var l = leads.find(function (x) { return x.id === id; });
-    if (!l) return;
-    openLeadId = id;
-    fillLead(l, false);
-    openDrawer(leadDrawer);
-  }
-
-  function fillLead(l, keepNotes) {
-    var d = toDate(l.createdAt);
-    $('#ldDate').textContent = 'Recebido ' + fmtDate(d, true);
-    $('#ldName').textContent = l.name;
-
-    var msg = 'Oi, ' + firstName(l.name) + '! Aqui é o Pedro, da Cron. Recebi seu contato pelo site' +
-      (l.project ? ' sobre um projeto como o da ' + l.project : '') + '. Podemos conversar?';
-    $('#ldWhats').href = 'https://wa.me/55' + String(l.whatsapp || '').replace(/\D/g, '') + '?text=' + encodeURIComponent(msg);
-    var em = $('#ldEmail');
-    em.hidden = !l.email;
-    if (l.email) em.href = 'mailto:' + l.email + '?subject=' + encodeURIComponent('Cron Web Studio | Seu projeto');
-
-    var st = STATUS_BY[l.status] ? l.status : 'novo';
-    $('#ldStatus').innerHTML = STATUS.map(function (s) {
-      return '<button type="button" data-st="' + s.id + '" style="--c:' + s.c + '" class="' + (s.id === st ? 'is-active' : '') + '">' + s.label + '</button>';
-    }).join('');
-
-    var utm = l.utm || {};
-    var utmTxt = Object.keys(utm).map(function (k) { return k + ': ' + utm[k]; }).join(' · ');
-    var facts = [
-      ['WhatsApp', fmtPhone(l.whatsapp)],
-      ['E-mail', l.email || '–'],
-      ['Empresa', l.company || '–'],
-      ['Precisa de', NEED[l.need] || '–'],
-      ['Origem', sourceName(l.source) + (l.sourceLabel ? ' (“' + l.sourceLabel + '”)' : ''), true],
-      l.project ? ['Projeto de referência', l.project, true] : null,
-      utmTxt ? ['Campanha (UTM)', utmTxt, true] : null,
-      l.referrer ? ['Veio de', l.referrer, true] : null,
-      l.updatedAt ? ['Última atualização', fmtDate(toDate(l.updatedAt), true), true] : null
-    ].filter(Boolean);
-    $('#ldFacts').innerHTML = facts.map(function (f) {
-      return '<div class="' + (f[2] ? 'full' : '') + '"><dt>' + esc(f[0]) + '</dt><dd>' + esc(f[1]) + '</dd></div>';
-    }).join('');
-
-    $('#ldMsgWrap').hidden = !l.message;
-    $('#ldMsg').textContent = l.message || '';
-
-    if (!keepNotes) {
-      $('#ldNotes').value = l.notes || '';
-      $('#ldSaved').textContent = '';
-    }
-
-    var cAt = toDate(l.consentAt);
-    $('#ldConsent').textContent = (l.consent ? 'Aceito' : 'Não registrado') +
-      (cAt ? ' em ' + fmtDate(cAt, true) : '') + (l.consentText ? '. Texto: “' + l.consentText + '”' : '') +
-      (l.page ? ' Página: ' + l.page : '');
-  }
-
-  $('#ldStatus').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-st]');
-    if (!b || !openLeadId || b.classList.contains('is-active')) return;
-    $$('#ldStatus button').forEach(function (x) { x.classList.toggle('is-active', x === b); });
-    api.updateLead(openLeadId, { status: b.dataset.st })
-      .then(function () { toast('Status: ' + STATUS_BY[b.dataset.st].label); })
-      .catch(function () { toast('Não foi possível salvar o status.', true); });
-  });
-
-  $('#ldSaveNotes').addEventListener('click', function () {
-    if (!openLeadId) return;
-    var btn = this;
-    btn.disabled = true;
-    api.updateLead(openLeadId, { notes: $('#ldNotes').value.slice(0, 5000) })
-      .then(function () {
-        $('#ldSaved').textContent = 'Salvo ' + new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        toast('Anotações salvas');
-      })
-      .catch(function () { toast('Não foi possível salvar.', true); })
-      .then(function () { btn.disabled = false; });
-  });
-
-  $('#ldDelete').addEventListener('click', function () {
-    var l = leads.find(function (x) { return x.id === openLeadId; });
-    if (!l) return;
-    confirmBox('Excluir este lead?', 'Os dados de ' + l.name + ' serão apagados de vez. Use também quando a pessoa pedir exclusão pela LGPD.')
-      .then(function (ok) {
-        if (!ok) return;
-        var id = openLeadId;
-        closeDrawer(leadDrawer);
-        api.deleteLead(id).then(function () { toast('Lead excluído'); })
-          .catch(function () { toast('Não foi possível excluir.', true); });
-      });
-  });
-
-  // ---------- CSV ----------
-  $('#exportCsv').addEventListener('click', function () {
-    var rows = filtered();
-    if (!rows.length) { toast('Nada para exportar.', true); return; }
-    var head = ['Data', 'Nome', 'WhatsApp', 'E-mail', 'Empresa', 'Precisa de', 'Mensagem', 'Origem', 'Projeto', 'Status', 'Anotações', 'UTM', 'Consentimento'];
-    var lines = [head].concat(rows.map(function (l) {
-      var utm = l.utm || {};
-      return [
-        fmtDate(toDate(l.createdAt), true), l.name, fmtPhone(l.whatsapp), l.email, l.company,
-        NEED[l.need] || '', l.message, sourceName(l.source), l.project,
-        (STATUS_BY[l.status] || STATUS_BY.novo).label, l.notes,
-        Object.keys(utm).map(function (k) { return k + '=' + utm[k]; }).join(' '),
-        l.consent ? 'sim' : 'não'
-      ];
-    })).map(function (r) {
-      return r.map(function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""').replace(/\r?\n/g, ' ') + '"'; }).join(';');
-    });
-    var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'leads-cron-' + new Date().toISOString().slice(0, 10) + '.csv';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   });
 
   // =================================================================
@@ -535,7 +403,7 @@
   function closeDrawer(dr) {
     dr.classList.remove('is-open');
     document.body.style.overflow = '';
-    if (dr === leadDrawer) openLeadId = null;
+    dr.dispatchEvent(new CustomEvent('drawer:closed'));
     setTimeout(function () { if (!dr.classList.contains('is-open')) dr.hidden = true; }, 380);
   }
   $$('.drawer').forEach(function (dr) {
@@ -544,7 +412,7 @@
     });
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key !== 'Escape' || !$('#confirm').hidden) return;
+    if (e.key !== 'Escape' || !$('#confirm').hidden || !$('#promptDlg').hidden) return;
     $$('.drawer.is-open').forEach(closeDrawer);
   });
 
@@ -879,37 +747,99 @@
   });
 
   // =================================================================
-  // Modo demonstração (dados de exemplo em memória)
+  // Modo demonstração (dados de exemplo em memória, nunca vão para o banco)
   // =================================================================
   function demoApi() {
     var now = Date.now();
-    var H = 3600000;
+    var H = 3600000, D = 24 * H;
+    var ago = function (ms) { return new Date(now - ms); };
+    var ahead = function (ms) { return new Date(now + ms); };
+    var today = function (h) { var d = new Date(); d.setHours(h, 0, 0, 0); return d; };
+    var CONSENT = 'Concordo que a Cron Web Studio use estes dados para entrar em contato sobre o meu projeto, conforme a Política de Privacidade e a LGPD.';
+    var DEL = { __del: true };
+    var site = function (o) {
+      return Object.assign({ origin: 'site', email: '', company: '', need: '', message: '', source: 'hero-primary', sourceLabel: 'Quero meu site rodando', project: '', notes: '', consent: true, consentText: CONSENT, utm: {}, page: 'https://cronwebstudio.com.br/', referrer: '' }, o, { consentAt: o.createdAt });
+    };
     var mem = {
       leads: [
-        { id: 'l1', name: 'Mariana Duarte', whatsapp: '14998123456', email: 'mariana@studioduarte.com.br', company: 'Studio Duarte', need: 'institucional', message: 'Quero um site novo pro estúdio, hoje dependo de agência pra trocar qualquer foto.', source: 'hero-primary', sourceLabel: 'Quero meu site rodando', project: '', status: 'novo', notes: '', createdAt: new Date(now - 0.4 * H), consent: true, consentAt: new Date(now - 0.4 * H), consentText: 'Concordo que a Cron Web Studio use estes dados para entrar em contato sobre o meu projeto, conforme a Política de Privacidade e a LGPD.', utm: { source: 'instagram', medium: 'bio' }, page: 'https://cronwebstudio.com.br/', referrer: 'https://l.instagram.com/' },
-        { id: 'l2', name: 'Ricardo Albuquerque', whatsapp: '11987654321', email: '', company: 'Albuquerque Peças', need: 'sistema', message: 'Vi o projeto da Meccal e quero algo parecido.', source: 'case-meccal', sourceLabel: 'Quero um assim', project: 'Meccal', status: 'novo', notes: '', createdAt: new Date(now - 5 * H), consent: true, consentAt: new Date(now - 5 * H), consentText: 'Concordo…', utm: {}, page: 'https://cronwebstudio.com.br/', referrer: '' },
-        { id: 'l3', name: 'Fernanda Lopes', whatsapp: '14996541230', email: 'fernanda@clinicavita.com', company: 'Clínica Vita', need: 'sistema', message: 'Precisamos de um painel pra equipe atualizar convênios e médicos.', source: 'plano-sistema', sourceLabel: 'Quero o plano Sistema', project: '', status: 'contato', notes: 'Liguei dia 14, pediu proposta até sexta.', createdAt: new Date(now - 26 * H), consent: true, consentAt: new Date(now - 26 * H), consentText: 'Concordo…', utm: { source: 'google', medium: 'organic' }, page: 'https://cronwebstudio.com.br/', referrer: 'https://www.google.com/' },
-        { id: 'l4', name: 'João Pedro Martins', whatsapp: '1432231122', email: '', company: '', need: 'nao-sei', message: '', source: 'final-whatsapp', sourceLabel: 'Quero conversar', project: '', status: 'proposta', notes: 'Proposta enviada, plano institucional.', createdAt: new Date(now - 74 * H), consent: true, consentAt: new Date(now - 74 * H), consentText: 'Concordo…', utm: {}, page: 'https://cronwebstudio.com.br/', referrer: '' },
-        { id: 'l5', name: 'Camila Rocha', whatsapp: '14991112233', email: 'camila@rochaarq.com.br', company: 'Rocha Arquitetura', need: 'institucional', message: 'Portfólio com projetos que eu mesma consiga atualizar.', source: 'hero-primary', sourceLabel: 'Quero meu site rodando', project: '', status: 'fechado', notes: 'Fechou institucional. Início dia 03.', createdAt: new Date(now - 9 * 24 * H), consent: true, consentAt: new Date(now - 9 * 24 * H), consentText: 'Concordo…', utm: {}, page: 'https://cronwebstudio.com.br/', referrer: '' },
-        { id: 'l6', name: 'Paulo Nogueira', whatsapp: '11955554444', email: '', company: 'PN Transportes', need: 'sistema', message: 'Orçamento pra sistema de rastreio.', source: 'final-whatsapp', sourceLabel: 'Quero conversar', project: '', status: 'perdido', notes: 'Fora do escopo.', createdAt: new Date(now - 40 * 24 * H), consent: true, consentAt: new Date(now - 40 * 24 * H), consentText: 'Concordo…', utm: {}, page: 'https://cronwebstudio.com.br/', referrer: '' }
+        site({ id: 'l1', name: 'Mariana Duarte', whatsapp: '14998123456', email: 'mariana@studioduarte.com.br', company: 'Studio Duarte', need: 'institucional', message: 'Quero um site novo pro estúdio, hoje dependo de agência pra trocar qualquer foto.', status: 'novo', createdAt: ago(0.4 * H), stageAt: ago(0.4 * H), utm: { source: 'instagram', medium: 'bio' }, referrer: 'https://l.instagram.com/' }),
+        site({ id: 'l2', name: 'Ricardo Albuquerque', whatsapp: '11987654321', company: 'Albuquerque Peças', need: 'sistema', message: 'Vi o projeto da Meccal e quero algo parecido.', source: 'case-meccal', sourceLabel: 'Quero um assim', project: 'Meccal', status: 'em_conversa', createdAt: ago(5 * D), stageAt: ago(3 * D), channel: 'whatsapp', nextStep: { text: 'Mandar exemplos de catálogo', dueAt: ago(1 * D) } }),
+        { id: 'l3', origin: 'cronus', createdBy: 'cronus', batchId: 'r1', name: 'Sérgio Tavares', role: 'Sócio-diretor', company: 'Tavares Móveis Planejados', niche: 'industria-moveis', whatsapp: '43999887766', instagram: 'tavaresmoveis', currentSite: '', siteStatus: 'sem_site', siteScore: 0, siteReason: 'Só tem Instagram e um link de catálogo em PDF.', googleRating: 4.8, googleReviews: 212, channel: 'whatsapp', fitReason: 'Fábrica com mais de 15 anos, catálogo grande e só PDF no WhatsApp.', status: 'mensagem_pronta', createdAt: ago(1 * D), stageAt: ago(1 * D), draft: { channel: 'whatsapp', text: 'Oi, Sérgio, tudo bem? Aqui é o Pedro, da Cron. Vi o trabalho da Tavares no Instagram e reparei que o catálogo vai por PDF. A gente monta catálogos online que a própria equipe atualiza. Posso te mostrar um exemplo?', approved: false }, sources: { whatsapp: 'google_maps', instagram: 'busca' }, googleMapsUrl: 'https://maps.google.com/?cid=1', notes: '' },
+        { id: 'l4', origin: 'cronus', createdBy: 'cronus', batchId: 'r1', name: '', company: 'Vidraçaria Horizonte', niche: 'construcao-vidracaria', whatsapp: '14996660011', instagram: 'horizontevidros', currentSite: 'https://horizontevidros.com.br', siteStatus: 'site_fraco', siteScore: 3, siteReason: 'Lento no celular, sem formulário e fotos de 2016.', googleRating: 4.6, googleReviews: 98, channel: 'instagram', fitReason: 'Bem avaliada, portfólio de obras e site parado.', status: 'mensagem_pronta', createdAt: ago(1 * D), stageAt: ago(1 * D), draft: { channel: 'instagram', text: 'Oi, pessoal da Horizonte! Aqui é o Pedro, da Cron. As obras de vocês no Instagram são ótimas, mas o site não mostra isso. Posso mandar uma ideia de como ficaria?', approved: true, approvedAt: ago(2 * H) }, notes: '' },
+        { id: 'l5', origin: 'cronus', createdBy: 'cronus', name: 'Ana Ribeiro', company: 'Clínica Sorriso Pleno', niche: 'saude-odontologia', whatsapp: '16991234567', instagram: 'sorrisopleno', siteStatus: 'site_fraco', siteScore: 4, channel: 'whatsapp', status: 'abordado', createdAt: ago(4 * D), stageAt: ago(2 * D), draft: { channel: 'whatsapp', text: 'Oi, Ana! Aqui é o Pedro, da Cron...', approved: true, approvedAt: ago(2 * D), sentAt: ago(2 * D) }, nextStep: { text: 'Follow-up se não responder', dueAt: today(17) }, notes: '' },
+        { id: 'l6', origin: 'indicacao', createdBy: 'admin', name: 'Carlos Menezes', role: 'Gerente comercial', company: 'Menezes Distribuidora', niche: 'distribuidor-hospitalar', whatsapp: '5514997776655', phone: '1432345678', email: 'carlos@menezesdist.com.br', channel: 'whatsapp', status: 'respondeu', createdAt: ago(6 * D), stageAt: ago(1 * D), fitReason: 'Indicação da MedControl.', nextStep: { text: 'Ligar para entender o catálogo', dueAt: ahead(3 * H) }, notes: '' },
+        site({ id: 'l7', name: 'Fernanda Lopes', whatsapp: '14996541230', email: 'fernanda@clinicavita.com', company: 'Clínica Vita', need: 'sistema', message: 'Precisamos de um painel pra equipe atualizar convênios e médicos.', source: 'plano-sistema', sourceLabel: 'Quero o plano Sistema', status: 'reuniao', createdAt: ago(9 * D), stageAt: ago(2 * D), meetingAt: ahead(1 * D + 2 * H), utm: { source: 'google', medium: 'organic' }, referrer: 'https://www.google.com/' }),
+        site({ id: 'l8', name: 'João Pedro Martins', whatsapp: '1432231122', status: 'proposta', source: 'final-whatsapp', sourceLabel: 'Quero conversar', createdAt: ago(12 * D), stageAt: ago(5 * D), notes: 'Proposta enviada, plano institucional.', nextStep: { text: 'Cobrar retorno da proposta', dueAt: ago(2 * D) } }),
+        site({ id: 'l9', name: 'Camila Rocha', whatsapp: '14991112233', email: 'camila@rochaarq.com.br', company: 'Rocha Arquitetura', need: 'institucional', status: 'fechado', createdAt: ago(30 * D), stageAt: ago(20 * D), notes: 'Fechou institucional.' }),
+        site({ id: 'l10', name: 'Paulo Nogueira', whatsapp: '11955554444', company: 'PN Transportes', need: 'sistema', message: 'Orçamento pra sistema de rastreio.', source: 'final-whatsapp', status: 'perdido', lostReason: 'Fora do escopo (rastreamento de frota).', createdAt: ago(40 * D), stageAt: ago(35 * D) }),
+        site({ id: 'l11', name: 'Beatriz Couto', whatsapp: '21988887777', company: 'Couto Advocacia', need: 'institucional', status: 'contato', createdAt: ago(15 * D), stageAt: ago(14 * D), notes: 'Lead antigo, ainda com a etapa "contato".' }),
+        { id: 'l12', origin: 'manual', createdBy: 'admin', name: 'Rogério Lima', company: 'Lima Usinagem', niche: 'industria-usinagem', phone: '1433334444', whatsapp: '', email: 'compras@limausinagem.com.br', channel: 'email', status: 'novo', createdAt: ago(3 * H), stageAt: ago(3 * H), notes: '' }
       ],
+      inter: {
+        l2: [{ id: 'i1', type: 'mudanca_etapa', from: 'novo', to: 'em_conversa', text: '', channel: '', createdAt: ago(3 * D), createdBy: 'admin' },
+             { id: 'i2', type: 'nota', text: 'Quer catálogo de peças com busca por código.', channel: '', from: '', to: '', createdAt: ago(3 * D - H), createdBy: 'admin' }],
+        l5: [{ id: 'i3', type: 'mensagem_enviada', text: 'Oi, Ana! Aqui é o Pedro, da Cron...', channel: 'whatsapp', from: '', to: '', createdAt: ago(2 * D), createdBy: 'admin' }],
+        l6: [{ id: 'i4', type: 'resposta', text: 'Respondeu que quer conversar na semana que vem.', channel: 'whatsapp', from: '', to: '', createdAt: ago(1 * D), createdBy: 'admin' }]
+      },
       projects: [
         { id: 'p1', client: 'Meccal', segment: 'Indústria', title: 'Catálogo industrial que o próprio time atualiza.', description: 'Produtos, categorias e fichas técnicas gerenciados por um painel simples. A equipe publica sozinha, sem abrir chamado.', quote: { text: '', author: '' }, tags: ['Catálogo', 'Painel administrativo', 'SEO'], ctaLabel: 'Quero um assim', siteUrl: 'https://meccal.com.br', siteLabel: 'Ver site no ar', image: '', imageAlt: '', published: true, order: 0 },
         { id: 'p2', client: 'Plane Aviation', segment: 'Aviação executiva', title: 'Frota e serviços sempre atualizados.', description: 'Site institucional com painel para aeronaves, serviços e galeria.', quote: { text: 'Hoje a gente atualiza tudo sozinho.', author: 'Plane Aviation' }, tags: ['Institucional', 'Painel'], ctaLabel: '', siteUrl: '', siteLabel: '', image: '', imageAlt: '', published: true, order: 1 }
       ]
     };
-    var listener = null;
+    var listener = null, interListeners = {};
     function emit() { if (listener) listener(mem.leads.slice().sort(function (a, b) { return b.createdAt - a.createdAt; })); }
+    function emitInter(id) {
+      var cb = interListeners[id];
+      if (cb) cb((mem.inter[id] || []).slice().sort(function (a, b) { return b.createdAt - a.createdAt; }));
+    }
     function clone(o) { return JSON.parse(JSON.stringify(o)); }
-    var wait = function (v) { return new Promise(function (r) { setTimeout(function () { r(v); }, 250); }); };
+    var wait = function (v) { return new Promise(function (r) { setTimeout(function () { r(v); }, 200); }); };
+    // aplica caminhos com ponto ('draft.approved') e o marcador de exclusão
+    function apply(obj, data) {
+      Object.keys(data).forEach(function (k) {
+        var parts = k.split('.'), o = obj;
+        for (var i = 0; i < parts.length - 1; i++) { o[parts[i]] = o[parts[i]] || {}; o = o[parts[i]]; }
+        var last = parts[parts.length - 1];
+        if (data[k] === DEL) delete o[last]; else o[last] = data[k];
+      });
+    }
+    function pushInter(id, list) {
+      (list || []).forEach(function (it) {
+        mem.inter[id] = mem.inter[id] || [];
+        mem.inter[id].push({ id: 'i' + Math.random().toString(36).slice(2), type: it.type, text: it.text || '', channel: it.channel || '', from: it.from || '', to: it.to || '', createdAt: new Date(), createdBy: 'admin' });
+      });
+      emitInter(id);
+    }
     return {
-      watchLeads: function (cb) { listener = cb; setTimeout(emit, 200); return function () { listener = null; }; },
-      updateLead: function (id, data) {
+      now: function () { return new Date(); },
+      del: function () { return DEL; },
+      watchLeads: function (cb) { listener = cb; setTimeout(emit, 150); return function () { listener = null; }; },
+      updateLead: function (id, data, inters) {
         var l = mem.leads.find(function (x) { return x.id === id; });
-        Object.assign(l, data, { updatedAt: new Date() });
+        apply(l, data); l.updatedAt = new Date();
+        pushInter(id, inters);
         return wait().then(emit);
       },
-      deleteLead: function (id) { mem.leads = mem.leads.filter(function (x) { return x.id !== id; }); return wait().then(emit); },
+      createLead: function (data, inters) {
+        var id = 'l' + Date.now();
+        var l = { id: id, createdAt: new Date(), stageAt: new Date(), createdBy: 'admin' };
+        apply(l, data);
+        mem.leads.push(l);
+        pushInter(id, inters);
+        return wait(id).then(function (v) { emit(); return v; });
+      },
+      deleteLead: function (id) {
+        mem.leads = mem.leads.filter(function (x) { return x.id !== id; });
+        delete mem.inter[id];
+        return wait().then(emit);
+      },
+      watchInteractions: function (id, cb) { interListeners[id] = cb; setTimeout(function () { emitInter(id); }, 100); return function () { delete interListeners[id]; }; },
+      addInteraction: function (id, it) { pushInter(id, [it]); return wait(); },
+      migrateLegacyStatus: function () {
+        var n = 0;
+        mem.leads.forEach(function (l) { if (l.status === 'contato') { l.status = 'em_conversa'; n++; } });
+        return wait(n).then(function (v) { emit(); return v; });
+      },
       listProjects: function () { return wait(clone(mem.projects)); },
       saveProject: function (id, data) {
         if (id) { var i = mem.projects.findIndex(function (x) { return x.id === id; }); mem.projects[i] = Object.assign({ id: id }, data); }
