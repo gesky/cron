@@ -1,0 +1,163 @@
+// Cron Web Studio · Usuários do painel (aba "Usuários")
+// Quem tem documento em admins/{uid} entra no painel. Aqui você adiciona e remove esse acesso.
+// Sem Cloud Functions: a conta de login é criada num app secundário do Firebase, para não
+// trocar a sua sessão. Remover tira o acesso ao painel na hora; a conta de login continua
+// existindo no Firebase (para apagar de vez: console > Authentication > Usuários).
+
+(function () {
+  'use strict';
+
+  var A = window.CRON_ADMIN;
+  if (!A || !A.api) return;
+
+  var api = A.api, $ = A.$, esc = A.esc, toDate = A.toDate, fmtDate = A.fmtDate,
+    initials = A.initials, toast = A.toast, confirmBox = A.confirmBox;
+
+  var admins = [], unsub = null, editing = null;
+  var EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+  A.register({
+    start: function () {
+      unsub = api.watchAdmins(function (list) { admins = list; render(); }, function (err) {
+        console.error(err);
+        $('#userList').innerHTML = '<p class="empty-line">Não foi possível carregar os usuários. Confira se as regras novas foram publicadas.</p>';
+      });
+    },
+    stop: function () { if (unsub) unsub(); unsub = null; }
+  });
+
+  function render() {
+    var me = A.user.uid;
+    var list = admins.slice().sort(function (a, b) {
+      if (a.id === me) return -1;
+      if (b.id === me) return 1;
+      return (a.name || a.email || '').localeCompare(b.name || b.email || '');
+    });
+    $('#userList').innerHTML = list.map(function (u) {
+      var mine = u.id === me;
+      var name = u.name || (mine && !u.email ? 'Você' : '') || 'Sem nome';
+      var email = u.email || (mine ? A.user.email : '');
+      var created = toDate(u.createdAt);
+      return '<article class="user">' +
+        '<span class="avatar">' + esc(initials(u.name || email || '?')) + '</span>' +
+        '<div class="user__info">' +
+          '<strong>' + esc(name) + (mine ? ' <span class="user__me">Você</span>' : '') + '</strong>' +
+          '<span>' + esc(email || 'E-mail não informado') + '</span>' +
+          '<small>UID ' + esc(u.id) + (created ? ' · desde ' + fmtDate(created) : '') + '</small>' +
+        '</div>' +
+        '<div class="user__actions">' +
+          '<button class="btn btn--ghost" type="button" data-uedit="' + esc(u.id) + '">Editar</button>' +
+          (mine ? '' : '<button class="btn-danger" type="button" data-uremove="' + esc(u.id) + '">Remover</button>') +
+        '</div>' +
+      '</article>';
+    }).join('') || '<p class="empty-line">Nenhum usuário encontrado.</p>';
+  }
+
+  $('#userList').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-uremove]');
+    if (b) {
+      var u = admins.find(function (x) { return x.id === b.dataset.uremove; });
+      if (!u || u.id === A.user.uid) return;
+      confirmBox('Remover o acesso de ' + (u.name || u.email || 'este usuário') + '?',
+        'A pessoa sai do painel na hora. A conta de login continua no Firebase; para apagar de vez, use o console em Authentication > Usuários.', 'Remover')
+        .then(function (ok) {
+          if (!ok) return;
+          api.removeAdmin(u.id).then(function () { toast('Acesso removido'); })
+            .catch(function (err) { console.error(err); toast('Não foi possível remover.', true); });
+        });
+      return;
+    }
+    var ed = e.target.closest('[data-uedit]');
+    if (ed) openUser(admins.find(function (x) { return x.id === ed.dataset.uedit; }));
+  });
+
+  // ---------- Gaveta ----------
+  var drawer = $('#userDrawer'), form = $('#userForm'), msg = $('#usMsg');
+
+  function syncMethod() {
+    var m = form.method.value;
+    $('#usPassWrap').hidden = editing || m !== 'password';
+    $('#usUidWrap').hidden = editing || m !== 'uid';
+  }
+  Array.prototype.forEach.call(form.querySelectorAll('[name="method"]'), function (r) { r.addEventListener('change', syncMethod); });
+
+  $('#newUser').addEventListener('click', function () { openUser(null); });
+
+  function openUser(u) {
+    editing = u ? u.id : null;
+    form.reset();
+    msg.textContent = '';
+    msg.className = 'form-msg';
+    $('#usTitle').textContent = u ? 'Editar usuário' : 'Adicionar usuário';
+    $('#usSave').textContent = u ? 'Salvar' : 'Adicionar';
+    $('#usMethodBox').hidden = !!u;
+    if (u) {
+      form.name.value = u.name || '';
+      form.email.value = u.email || (u.id === A.user.uid ? A.user.email : '');
+    }
+    syncMethod();
+    A.openDrawer(drawer);
+    setTimeout(function () { form.name.focus(); }, 250);
+  }
+
+  function authError(err) {
+    var c = err && err.code || '';
+    if (c === 'auth/email-already-in-use') return 'Esse e-mail já tem conta no Firebase. Escolha "A conta já existe no Firebase" e cole o UID que aparece em Authentication > Usuários.';
+    if (c === 'auth/admin-restricted-operation' || c === 'auth/operation-not-allowed') return 'A criação de contas pelo site está desligada no Firebase. Crie a conta no console (Authentication > Usuários > Adicionar usuário), copie o UID e use a opção "A conta já existe no Firebase".';
+    if (c === 'auth/weak-password') return 'Senha fraca. Use pelo menos 8 caracteres, misturando letras e números.';
+    if (c === 'auth/invalid-email') return 'E-mail inválido.';
+    if (c === 'auth/too-many-requests') return 'Muitas tentativas seguidas. Espere alguns minutos e tente de novo.';
+    if (c === 'permission-denied') return 'O banco recusou a gravação. Confira se as regras novas foram publicadas.';
+    if (c === 'already-exists') return 'Essa pessoa já tem acesso ao painel.';
+    return 'Não foi possível concluir. Tente de novo.';
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    msg.className = 'form-msg';
+    var name = form.name.value.trim().slice(0, 80);
+    var email = form.email.value.trim().toLowerCase();
+    if (name.length < 2) { msg.textContent = 'Preencha o nome.'; return; }
+    if (!EMAIL.test(email) || email.length > 160) { msg.textContent = 'Preencha um e-mail válido.'; return; }
+    var btn = $('#usSave');
+
+    if (editing) {
+      btn.disabled = true;
+      api.updateAdmin(editing, { name: name, email: email }).then(function () {
+        toast('Usuário salvo');
+        A.closeDrawer(drawer);
+      }).catch(function (err) { msg.textContent = authError(err); }).then(function () { btn.disabled = false; });
+      return;
+    }
+
+    if (admins.some(function (a) { return (a.email || '').toLowerCase() === email; })) {
+      msg.textContent = 'Esse e-mail já tem acesso ao painel.';
+      return;
+    }
+    var method = form.method.value;
+    var getUid;
+    if (method === 'uid') {
+      var uid = form.uid.value.trim();
+      if (!/^[A-Za-z0-9]{20,40}$/.test(uid)) { msg.textContent = 'O UID tem só letras e números (cerca de 28 caracteres).'; return; }
+      if (admins.some(function (a) { return a.id === uid; })) { msg.textContent = 'Esse UID já tem acesso ao painel.'; return; }
+      getUid = Promise.resolve(uid);
+    } else {
+      var pass = method === 'password' ? form.password.value : '';
+      if (method === 'password' && pass.length < 8) { msg.textContent = 'A senha provisória precisa de pelo menos 8 caracteres.'; return; }
+      getUid = api.createAuthUser(email, pass);
+    }
+    btn.disabled = true;
+    msg.textContent = 'Criando acesso…';
+    getUid.then(function (uid) {
+      return api.addAdmin(uid, { name: name, email: email }).then(function () { return uid; });
+    }).then(function () {
+      A.closeDrawer(drawer);
+      toast(method === 'invite' ? 'Usuário adicionado. O e-mail para criar a senha foi enviado.'
+        : method === 'password' ? 'Usuário adicionado. Passe a senha provisória para a pessoa.'
+        : 'Usuário adicionado.');
+    }).catch(function (err) {
+      console.error(err);
+      msg.textContent = authError(err);
+    }).then(function () { btn.disabled = false; });
+  });
+})();

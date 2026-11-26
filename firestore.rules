@@ -8,7 +8,9 @@ rules_version = '2';
 //          o admin lê, cadastra leads manuais e edita os campos de CRM (nunca consentimento,
 //          UTM, data de criação ou de onde o lead clicou no site)
 // - leads/{id}/interacoes: histórico do lead; admin lê, cria e apaga (ao excluir o lead); ninguém edita
-// - admins: cada documento com o UID libera o painel (criado à mão no console)
+// - rodadas: rodadas de prospecção; admin lê, cria e edita; nunca apaga (arquiva)
+// - admins: cada documento com o UID libera o painel; admins gerenciam outros admins
+//           pelo painel (ninguém remove o próprio acesso)
 // - qualquer outra coleção: bloqueada
 
 service cloud.firestore {
@@ -21,8 +23,68 @@ service cloud.firestore {
 
     // ---------------- Admins ----------------
     match /admins/{uid} {
-      allow get: if request.auth != null && request.auth.uid == uid;
-      allow list, write: if false;
+      // cada pessoa lê o próprio documento (o painel confere o acesso); admin lê todos
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validAdmin(request.resource.data);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'updatedAt'])
+        && (!('name' in request.resource.data) || str(request.resource.data.name, 80))
+        && (!('email' in request.resource.data) || mail(request.resource.data.email))
+        && request.resource.data.updatedAt == request.time;
+      // remover o acesso de outra pessoa; o próprio, nunca (sempre sobra pelo menos um admin)
+      allow delete: if isAdmin() && request.auth.uid != uid;
+    }
+
+    function validAdmin(d) {
+      return d.keys().hasOnly(['name', 'email', 'role', 'createdAt', 'createdBy'])
+        && str(d.name, 80)
+        && mail(d.email) && d.email.size() > 0
+        && d.role == 'admin'
+        && d.createdAt == request.time
+        && d.createdBy == request.auth.uid;
+    }
+
+    // ---------------- Rodadas de prospecção ----------------
+    match /rodadas/{id} {
+      allow get, list: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.createdBy == 'admin'
+        && request.resource.data.createdAt == request.time
+        && validRodada(request.resource.data);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['niche', 'nicheLabel', 'region', 'criteria', 'funnel', 'status', 'notes', 'updatedAt'])
+        && validRodada(request.resource.data);
+      allow delete: if false;
+    }
+
+    function siteStAt(l, i) { return l.size() <= i || l[i] in ['sem_site', 'site_fraco', 'ok']; }
+    function cnt(m, k) { return !(k in m) || (m[k] is int && m[k] >= 0 && m[k] <= 100000); }
+
+    function validRodada(d) {
+      return d.keys().hasOnly(['niche', 'nicheLabel', 'region', 'criteria', 'funnel', 'status', 'notes',
+                               'createdBy', 'createdAt', 'updatedAt'])
+        && d.niche is string && d.niche.matches('^[a-z0-9-]{2,60}$')
+        && str(d.nicheLabel, 80)
+        && (!('region' in d) || str(d.region, 120))
+        && (!('notes' in d) || str(d.notes, 2000))
+        && d.status in ['em_andamento', 'concluida', 'arquivada']
+        && d.createdBy in ['admin', 'cronus']
+        && (!('criteria' in d) || (d.criteria is map
+            && d.criteria.keys().hasOnly(['minRating', 'minReviews', 'siteStatusAccepted', 'requireContact'])
+            && (!('minRating' in d.criteria) || (d.criteria.minRating is number && d.criteria.minRating >= 0 && d.criteria.minRating <= 5))
+            && (!('minReviews' in d.criteria) || (d.criteria.minReviews is int && d.criteria.minReviews >= 0 && d.criteria.minReviews <= 100000))
+            && (!('requireContact' in d.criteria) || d.criteria.requireContact is bool)
+            && (!('siteStatusAccepted' in d.criteria) || (d.criteria.siteStatusAccepted is list
+                && d.criteria.siteStatusAccepted.size() <= 3
+                && siteStAt(d.criteria.siteStatusAccepted, 0)
+                && siteStAt(d.criteria.siteStatusAccepted, 1)
+                && siteStAt(d.criteria.siteStatusAccepted, 2)))))
+        && (!('funnel' in d) || (d.funnel is map
+            && d.funnel.keys().hasOnly(['encontradas', 'notaMinima', 'avaliacoes', 'siteSemOuFraco', 'comContato', 'qualificadas'])
+            && cnt(d.funnel, 'encontradas') && cnt(d.funnel, 'notaMinima') && cnt(d.funnel, 'avaliacoes')
+            && cnt(d.funnel, 'siteSemOuFraco') && cnt(d.funnel, 'comContato') && cnt(d.funnel, 'qualificadas')));
     }
 
     // ---------------- Projetos ----------------
@@ -121,7 +183,8 @@ service cloud.firestore {
         'phone', 'linkedin', 'companyLinkedin', 'companyEmail', 'cnpjEmail', 'cnpjPhone',
         'legalName', 'googleMapsUrl', 'facebook', 'address', 'otherLinks', 'sources',
         'channel', 'fitReason', 'draft', 'previewId', 'batchId', 'owner',
-        'nextStep', 'meetingAt', 'lostReason'
+        'nextStep', 'meetingAt', 'lostReason',
+        'prospectState', 'drafts', 'discardReason'
       ];
     }
 
@@ -179,7 +242,14 @@ service cloud.firestore {
         && (!('owner' in d) || str(d.owner, 40))
         && (!('nextStep' in d) || validNextStep(d.nextStep))
         && (!('meetingAt' in d) || tsOrNull(d.meetingAt))
-        && (!('lostReason' in d) || str(d.lostReason, 300));
+        && (!('lostReason' in d) || str(d.lostReason, 300))
+        && (!('prospectState' in d) || d.prospectState in ['pendente', 'aprovado', 'descartado'])
+        && (!('discardReason' in d) || str(d.discardReason, 300))
+        && (!('drafts' in d) || (d.drafts is map
+            && d.drafts.keys().hasOnly(['whatsapp', 'instagram', 'email'])
+            && (!('whatsapp' in d.drafts) || str(d.drafts.whatsapp, 2000))
+            && (!('instagram' in d.drafts) || str(d.drafts.instagram, 2000))
+            && (!('email' in d.drafts) || str(d.drafts.email, 2000))));
     }
 
     // Até 10 links, cada um http/https (as regras não têm laço, então cada posição é conferida)

@@ -20,7 +20,8 @@ O que elas fazem:
 - **projects**: qualquer visitante lê só os publicados; só o admin cria, edita e exclui.
 - **leads**: qualquer visitante pode enviar (com consentimento LGPD e campos validados); só o admin lê, edita e exclui.
 - **leads/{id}/interacoes**: histórico de cada lead; só o admin lê, cria e apaga (o painel apaga o histórico junto com o lead); ninguém edita.
-- **admins**: lista de quem pode entrar no painel.
+- **rodadas**: rodadas de prospecção; só o admin lê, cria e edita; ninguém apaga (arquiva).
+- **admins**: lista de quem pode entrar no painel. Os próprios admins adicionam e removem pela aba Usuários; ninguém remove o próprio acesso.
 
 ## 3. Criar o seu acesso de admin
 
@@ -127,6 +128,7 @@ css/style.css               landing + formulário + cursor
 css/motion.css              animação do painel
 css/admin.css               painel
 css/admin-crm.css           CRM do painel (quadro, cartões, gaveta do lead)
+css/admin-prospeccao.css    Prospecção, Usuários e menu do painel no celular
 fonts/                      arquivos da Sora
 js/early.js, js/intro.js    marcação inicial e abertura 3D
 js/firebase-config.js       chaves do Firebase (+ App Check opcional)
@@ -137,6 +139,8 @@ js/cursor.js                cursor personalizado
 js/globe.js, globe-data.js  globo do hero
 js/admin.js                 núcleo do painel (login, abas, dados, projetos) e window.CRON_ADMIN
 js/admin-crm.js             aba CRM
+js/admin-prospeccao.js      aba Prospecção (rodadas, candidatos, fila de aprovação)
+js/admin-users.js           aba Usuários
 js/vendor/                  Firebase e Lenis hospedados no site
 firestore.rules             regras de segurança (colar no console)
 tests/                      testes das regras no emulador (não vão para o banco real)
@@ -195,3 +199,48 @@ cd tests
 npm install
 npm test
 ```
+
+## Prospecção (aba "Prospecção" do painel)
+
+O CronUS pesquisa empresas de um nicho, qualifica e deixa mensagens prontas. Você revisa, aprova e manda para o CRM. **Aprovar é sempre seu; nada é enviado sozinho.**
+
+### Dados
+
+- Coleção `rodadas`: `{ niche, nicheLabel, region (interna), criteria: { minRating, minReviews, siteStatusAccepted, requireContact }, funnel: { encontradas, notaMinima, avaliacoes, siteSemOuFraco, comContato, qualificadas }, status ('em_andamento' | 'concluida' | 'arquivada'), notes, createdBy ('admin' | 'cronus'), createdAt, updatedAt }`. Não se apaga rodada: arquiva.
+- Os candidatos ficam em `leads` mesmo, com `origin: 'cronus'`, `batchId` (id da rodada) e `prospectState`: `pendente` | `aprovado` | `descartado`. Pendentes e descartados **não aparecem no CRM**, só na Prospecção. Não existe cópia de dados entre coleções.
+- Mensagens sugeridas por canal: `drafts: { whatsapp, instagram, email }`. A escolhida e aprovada vai para `draft` (o mesmo campo do CRM). Motivo de descarte: `discardReason`.
+
+### Como funciona
+
+- **Rodadas**: lista com nicho, data, funil resumido e pendentes. Dentro da rodada: funil completo, candidatos por estado (pendentes, aprovados, descartados), mensagem por canal editável no próprio cartão.
+- **Aprovar e mandar para o CRM**: o candidato entra no CRM em **Mensagem pronta** com a mensagem que está na tela já aprovada (sem mensagem, entra em **Novo**). O histórico registra a aprovação e a mudança de etapa.
+- **Descartar**: motivo opcional. Dá para voltar o descartado para pendentes.
+- **Seleção em lote**: marque vários e use a barra que aparece embaixo (Aprovar ou Descartar).
+- **Fila de aprovação**: junta os candidatos pendentes com mensagem, de qualquer rodada, e os leads do CRM em Mensagem pronta ainda sem aprovação. Para os leads do CRM, aprovar só aprova a mensagem.
+- **Nova rodada**: dá para criar à mão (nicho, região, critérios e funil). Normalmente quem cria é o CronUS (fase 4).
+
+## Usuários (aba "Usuários" do painel)
+
+Quem tem documento em `admins/{uid}` entra no painel e pode fazer tudo, inclusive gerenciar outros usuários.
+
+### Adicionar
+
+Três jeitos, escolhidos na gaveta:
+
+1. **Enviar e-mail para criar a senha** (recomendado): o painel cria a conta com uma senha aleatória e o Firebase manda para a pessoa o e-mail de redefinição. Ninguém além dela conhece a senha.
+2. **Senha provisória**: você define e passa para a pessoa. Ela pode trocar em "Esqueci minha senha".
+3. **A conta já existe no Firebase**: cole o UID que aparece em Authentication > Usuários.
+
+A conta é criada num app secundário do Firebase, então a sua sessão não muda.
+
+**Se a criação de contas estiver desligada** no Firebase (Authentication > Configurações > Ações do usuário > "Ativar criação"), as opções 1 e 2 mostram um aviso. Nesse caso, crie a conta no console (Authentication > Usuários > Adicionar usuário) e use a opção 3. Ligar a criação de contas é seguro neste projeto: uma conta nova não vê nada sem o documento em `admins`, que só um admin cria.
+
+O e-mail de redefinição usa o modelo padrão do Firebase. Para trocar o remetente e o texto: Authentication > Modelos > Redefinição de senha.
+
+### Remover
+
+Tira o acesso ao painel na hora (se a pessoa estiver com o painel aberto, ele fecha). A conta de login continua existindo no Firebase; para apagar de vez, use Authentication > Usuários no console. Ninguém consegue remover o próprio acesso, então sempre sobra pelo menos um admin.
+
+### Testes
+
+`tests/rules/fase2.test.js` cobre rodadas, prospecção nos leads e usuários (`cd tests && npm install && npm test`).
