@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/admin.css">
   <link rel="stylesheet" href="css/admin-crm.css">
+  <link rel="stylesheet" href="css/admin-prospeccao.css">
 </head>
 <body>
 
@@ -68,9 +69,17 @@
           <svg viewBox="0 0 24 24"><path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19M10 10.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM20 19v-1.5a3.5 3.5 0 0 0-2.5-3.35M15.5 3.65a3.5 3.5 0 0 1 0 6.7"/></svg>
           CRM <span class="badge" id="newBadge" hidden aria-label="mensagens aguardando aprovação">0</span>
         </button>
+        <button class="side__link" data-tab="prospect">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2M8.5 11h5M11 8.5v5"/></svg>
+          Prospecção <span class="badge badge--dark" id="prospectBadge" hidden aria-label="candidatos pendentes">0</span>
+        </button>
         <button class="side__link" data-tab="projects">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2.5"/><path d="M3 9h18M8 21h8"/></svg>
           <span>Projetos<span class="hide-m"> no ar</span></span>
+        </button>
+        <button class="side__link" data-tab="users">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20v-1a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v1"/></svg>
+          Usuários
         </button>
       </nav>
       <div class="side__foot">
@@ -166,6 +175,79 @@
       </section>
 
       <!-- ===================== PROJETOS ===================== -->
+      <!-- ===================== PROSPECÇÃO ===================== -->
+      <section class="tab" id="tab-prospect" hidden>
+        <header class="top">
+          <div>
+            <p class="top__eyebrow">Comercial</p>
+            <h1>Prospecção</h1>
+          </div>
+          <div class="top__actions">
+            <button class="btn btn--lime" id="newRodada"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nova rodada</button>
+          </div>
+        </header>
+
+        <div class="viewsw pr-switch" role="group" aria-label="Visão da prospecção">
+          <button data-pview="rodadas" aria-pressed="true">Rodadas</button>
+          <button data-pview="fila" aria-pressed="false">Fila<span class="hide-m"> de aprovação</span> <b class="fcount" id="queueCount" hidden>0</b></button>
+        </div>
+
+        <!-- Lista de rodadas -->
+        <div id="prRodadas">
+          <label class="check pr-archived"><input type="checkbox" id="prShowArchived"><span>Mostrar arquivadas</span></label>
+          <div class="pr-grid" id="prRodadaList" aria-live="polite"></div>
+          <div class="empty empty--panel" id="prEmpty" hidden>
+            <img src="img/cron-icon.svg" alt="">
+            <p>Nenhuma rodada ainda. Quando o CronUS pesquisar um nicho, a rodada aparece aqui. Você também pode criar uma à mão.</p>
+          </div>
+        </div>
+
+        <!-- Uma rodada -->
+        <div id="prDetail" hidden>
+          <button class="btn-text pr-back" id="prBack" type="button"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg>Todas as rodadas</button>
+          <div class="panel pr-head" id="prHead"></div>
+          <div class="panel pr-funnel" id="prFunnel"></div>
+          <div class="pr-toolbar">
+            <div class="viewsw" role="group" aria-label="Filtrar candidatos" id="prStateSw">
+              <button data-pstate="pendente" aria-pressed="true">Pendentes <b id="cPend">0</b></button>
+              <button data-pstate="aprovado" aria-pressed="false">Aprovados <b id="cApr">0</b></button>
+              <button data-pstate="descartado" aria-pressed="false">Descartados <b id="cDesc">0</b></button>
+            </div>
+            <label class="check" id="prSelAllWrap"><input type="checkbox" id="prSelAll"><span>Selecionar todos</span></label>
+          </div>
+          <div class="pr-cards" id="prCards" aria-live="polite"></div>
+        </div>
+
+        <!-- Fila de aprovação -->
+        <div id="prQueue" hidden>
+          <p class="muted pr-intro">Mensagens esperando a sua aprovação: candidatos pendentes de qualquer rodada e leads do CRM com mensagem pronta. O CronUS nunca aprova nada.</p>
+          <label class="check" id="qSelAllWrap"><input type="checkbox" id="qSelAll"><span>Selecionar todos</span></label>
+          <div class="pr-cards" id="qCards" aria-live="polite"></div>
+        </div>
+
+        <!-- Barra de ações em lote -->
+        <div class="bulkbar" id="bulkbar" hidden role="region" aria-label="Ações em lote">
+          <span id="bulkCount">0 selecionados</span>
+          <button class="btn btn--ghost" id="bulkDiscard" type="button">Descartar</button>
+          <button class="btn btn--lime" id="bulkApprove" type="button">Aprovar</button>
+        </div>
+      </section>
+
+      <!-- ===================== USUÁRIOS ===================== -->
+      <section class="tab" id="tab-users" hidden>
+        <header class="top">
+          <div>
+            <p class="top__eyebrow">Acesso</p>
+            <h1>Usuários</h1>
+          </div>
+          <div class="top__actions">
+            <button class="btn btn--lime" id="newUser"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Adicionar usuário</button>
+          </div>
+        </header>
+        <p class="muted users-intro">Quem está nesta lista entra no painel e pode fazer tudo, inclusive adicionar e remover outros usuários. Você não pode remover o seu próprio acesso.</p>
+        <div class="users" id="userList" aria-live="polite"></div>
+      </section>
+
       <section class="tab" id="tab-projects" hidden>
         <header class="top">
           <div>
@@ -396,6 +478,92 @@
     </div>
   </div>
 
+  <!-- ===================== GAVETA: RODADA ===================== -->
+  <div class="drawer" id="rodadaDrawer" hidden>
+    <div class="drawer__backdrop" data-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="rdTitle">
+      <header class="drawer__head">
+        <div>
+          <p class="top__eyebrow">Prospecção</p>
+          <h2 id="rdTitle">Nova rodada</h2>
+        </div>
+        <button class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <form class="drawer__body" id="rodadaForm" novalidate>
+        <div class="grid2">
+          <label class="f"><span>Nicho</span><input name="nicheLabel" maxlength="80" required placeholder="Ex.: Indústria de móveis"></label>
+          <label class="f"><span>Código do nicho</span><input name="niche" maxlength="60" placeholder="industria-moveis"><em class="hint">Preenchido a partir do nome. Usado nos filtros do CRM.</em></label>
+        </div>
+        <label class="f"><span>Região (interno, nunca aparece em nada público)</span><input name="region" maxlength="120" placeholder="Ex.: Interior de SP"></label>
+        <fieldset class="ld-group">
+          <legend>Critérios</legend>
+          <div class="grid2">
+            <label class="f"><span>Nota mínima no Google (0 a 5)</span><input name="minRating" inputmode="decimal" placeholder="4,3"></label>
+            <label class="f"><span>Mínimo de avaliações</span><input name="minReviews" inputmode="numeric" placeholder="30"></label>
+          </div>
+          <div class="f"><span>Situação do site aceita</span>
+            <div class="checks">
+              <label class="check"><input type="checkbox" name="st_sem_site" checked><span>Sem site</span></label>
+              <label class="check"><input type="checkbox" name="st_site_fraco" checked><span>Site fraco</span></label>
+              <label class="check"><input type="checkbox" name="st_ok"><span>Site ok</span></label>
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" name="requireContact" checked><span>Só empresas com algum contato (WhatsApp, Instagram ou e-mail)</span></label>
+        </fieldset>
+        <details class="ld-group rd-funnel">
+          <summary>Funil (o CronUS preenche)</summary>
+          <div class="grid3">
+            <label class="f"><span>Encontradas</span><input name="f_encontradas" inputmode="numeric"></label>
+            <label class="f"><span>Nota mínima</span><input name="f_notaMinima" inputmode="numeric"></label>
+            <label class="f"><span>Avaliações</span><input name="f_avaliacoes" inputmode="numeric"></label>
+            <label class="f"><span>Sem site ou fraco</span><input name="f_siteSemOuFraco" inputmode="numeric"></label>
+            <label class="f"><span>Com contato</span><input name="f_comContato" inputmode="numeric"></label>
+            <label class="f"><span>Qualificadas</span><input name="f_qualificadas" inputmode="numeric"></label>
+          </div>
+        </details>
+        <label class="f"><span>Anotações</span><textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+        <p class="form-msg" id="rdMsg" role="alert"></p>
+        <div class="drawer__foot">
+          <button class="btn btn--ghost" type="button" data-close>Cancelar</button>
+          <button class="btn btn--lime" type="submit" id="rdSave">Criar rodada</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- ===================== GAVETA: USUÁRIO ===================== -->
+  <div class="drawer" id="userDrawer" hidden>
+    <div class="drawer__backdrop" data-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="usTitle">
+      <header class="drawer__head">
+        <div>
+          <p class="top__eyebrow">Acesso ao painel</p>
+          <h2 id="usTitle">Adicionar usuário</h2>
+        </div>
+        <button class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <form class="drawer__body" id="userForm" novalidate>
+        <div class="grid2">
+          <label class="f"><span>Nome</span><input name="name" maxlength="80" autocomplete="off" required></label>
+          <label class="f"><span>E-mail</span><input name="email" type="email" maxlength="160" autocomplete="off" required></label>
+        </div>
+        <fieldset class="ld-group" id="usMethodBox">
+          <legend>Como a pessoa vai entrar</legend>
+          <label class="radio"><input type="radio" name="method" value="invite" checked><span><strong>Enviar e-mail para criar a senha</strong><em>A pessoa recebe um link e escolhe a própria senha. Você nunca vê a senha.</em></span></label>
+          <label class="radio"><input type="radio" name="method" value="password"><span><strong>Definir uma senha provisória</strong><em>Você passa a senha para a pessoa. Ela pode trocar em "Esqueci minha senha".</em></span></label>
+          <label class="radio"><input type="radio" name="method" value="uid"><span><strong>A conta já existe no Firebase</strong><em>Cole o UID que aparece em Authentication &gt; Usuários.</em></span></label>
+        </fieldset>
+        <label class="f" id="usPassWrap" hidden><span>Senha provisória (mínimo 8 caracteres)</span><input name="password" type="text" minlength="8" maxlength="64" autocomplete="off"></label>
+        <label class="f" id="usUidWrap" hidden><span>UID da conta</span><input name="uid" maxlength="40" autocomplete="off" placeholder="Ex.: x7Gk2..."></label>
+        <p class="form-msg" id="usMsg" role="alert"></p>
+        <div class="drawer__foot">
+          <button class="btn btn--ghost" type="button" data-close>Cancelar</button>
+          <button class="btn btn--lime" type="submit" id="usSave">Adicionar</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
   <!-- Pergunta com campo de texto -->
   <div class="confirm" id="promptDlg" hidden>
     <div class="confirm__card" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
@@ -419,5 +587,7 @@
   <script src="js/firebase-config.js"></script>
   <script src="js/admin.js"></script>
   <script src="js/admin-crm.js"></script>
+  <script src="js/admin-prospeccao.js"></script>
+  <script src="js/admin-users.js"></script>
 </body>
 </html>
