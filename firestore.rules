@@ -4,8 +4,10 @@ rules_version = '2';
 // Princípio: tudo fechado por padrão; cada coleção libera só o mínimo necessário.
 //
 // - projects: visitante lê só os publicados; admin cria/edita/exclui com campos validados
-// - leads: visitante só CRIA (campos validados + consentimento LGPD); só o admin lê,
-//          e o admin só pode mudar status e anotações
+// - leads: visitante só CRIA pelo formulário (campos validados + consentimento LGPD);
+//          o admin lê, cadastra leads manuais e edita os campos de CRM (nunca consentimento,
+//          UTM, data de criação ou de onde o lead clicou no site)
+// - leads/{id}/interacoes: histórico do lead; admin lê e cria; ninguém edita nem apaga
 // - admins: cada documento com o UID libera o painel (criado à mão no console)
 // - qualquer outra coleção: bloqueada
 
@@ -56,15 +58,25 @@ service cloud.firestore {
 
     // ---------------- Leads ----------------
     match /leads/{id} {
-      allow create: if validLead(request.resource.data);
+      // Formulário do site (exatamente como antes) ou cadastro manual pelo admin
+      allow create: if validLead(request.resource.data)
+        || (isAdmin() && validCrmLead(request.resource.data));
       allow get, list: if isAdmin();
+      // Admin edita só campos de CRM; o documento resultante precisa continuar válido
       allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'notes', 'updatedAt'])
-        && request.resource.data.status in ['novo', 'contato', 'proposta', 'fechado', 'perdido']
-        && str(request.resource.data.notes, 5000);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(crmEditable())
+        && validCrmFields(request.resource.data);
       allow delete: if isAdmin();
+
+      // Histórico: só cresce. Nada é editado nem apagado.
+      match /interacoes/{iid} {
+        allow get, list: if isAdmin();
+        allow create: if isAdmin() && validInteraction(request.resource.data);
+        allow update, delete: if false;
+      }
     }
 
+    // Formulário público do site (sem mudanças)
     function validLead(d) {
       return d.keys().hasOnly([
           'name', 'whatsapp', 'email', 'company', 'need', 'message',
@@ -93,6 +105,119 @@ service cloud.firestore {
         && (!('campaign' in d.utm) || str(d.utm.campaign, 120))
         && (!('content' in d.utm) || str(d.utm.content, 120))
         && (!('term' in d.utm) || str(d.utm.term, 120));
+    }
+
+    // Campos que o admin pode alterar num lead existente.
+    // Fora da lista (imutáveis): createdAt, createdBy, consent, consentText, consentAt,
+    // utm, source, sourceLabel, project, page, referrer, message.
+    function crmEditable() {
+      return [
+        'status', 'notes', 'updatedAt', 'stageAt',
+        'name', 'company', 'whatsapp', 'email', 'need',
+        'origin', 'role', 'instagram', 'niche', 'city', 'state',
+        'currentSite', 'siteStatus', 'siteScore', 'siteReason',
+        'googleRating', 'googleReviews', 'cnpj', 'companyYears',
+        'phone', 'linkedin', 'companyLinkedin', 'companyEmail', 'cnpjEmail', 'cnpjPhone',
+        'legalName', 'googleMapsUrl', 'facebook', 'address', 'otherLinks', 'sources',
+        'channel', 'fitReason', 'draft', 'previewId', 'batchId', 'owner',
+        'nextStep', 'meetingAt', 'lostReason'
+      ];
+    }
+
+    // Etapas do funil. 'contato' fica aceito para leads antigos (o painel mostra como "Em conversa").
+    function stages() {
+      return ['novo', 'mensagem_pronta', 'abordado', 'respondeu', 'em_conversa',
+              'reuniao', 'proposta', 'fechado', 'perdido', 'contato'];
+    }
+
+    function url(v) { return str(v, 300) && (v == '' || v.matches('^https?://.+')); }
+    function mail(v) { return str(v, 160) && (v == '' || v.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')); }
+    function tsOrNull(v) { return v == null || v is timestamp; }
+
+    // Valida só os campos de CRM presentes (todos opcionais, exceto status).
+    function validCrmFields(d) {
+      return d.status in stages()
+        && (!('notes' in d) || str(d.notes, 5000))
+        && (!('stageAt' in d) || d.stageAt is timestamp)
+        && (!('name' in d) || str(d.name, 120))
+        && (!('company' in d) || str(d.company, 120))
+        && (!('whatsapp' in d) || (d.whatsapp is string && d.whatsapp.matches('^([0-9]{10,13})?$')))
+        && (!('email' in d) || mail(d.email))
+        && (!('need' in d) || d.need in ['', 'institucional', 'sistema', 'nao-sei'])
+        && (!('origin' in d) || d.origin in ['site', 'cronus', 'indicacao', 'manual'])
+        && (!('role' in d) || str(d.role, 80))
+        && (!('instagram' in d) || (d.instagram is string && d.instagram.matches('^[A-Za-z0-9._]{0,30}$')))
+        && (!('niche' in d) || (d.niche is string && d.niche.matches('^[a-z0-9-]{0,60}$')))
+        && (!('city' in d) || str(d.city, 80))
+        && (!('state' in d) || (d.state is string && d.state.matches('^([A-Z]{2})?$')))
+        && (!('currentSite' in d) || url(d.currentSite))
+        && (!('siteStatus' in d) || d.siteStatus in ['', 'sem_site', 'site_fraco', 'ok'])
+        && (!('siteScore' in d) || (d.siteScore is int && d.siteScore >= 0 && d.siteScore <= 10))
+        && (!('siteReason' in d) || str(d.siteReason, 300))
+        && (!('googleRating' in d) || (d.googleRating is number && d.googleRating >= 0 && d.googleRating <= 5))
+        && (!('googleReviews' in d) || (d.googleReviews is int && d.googleReviews >= 0 && d.googleReviews <= 1000000))
+        && (!('cnpj' in d) || (d.cnpj is string && d.cnpj.matches('^([0-9]{14})?$')))
+        && (!('companyYears' in d) || (d.companyYears is int && d.companyYears >= 0 && d.companyYears <= 200))
+        && (!('phone' in d) || (d.phone is string && d.phone.matches('^([0-9]{8,13})?$')))
+        && (!('linkedin' in d) || url(d.linkedin))
+        && (!('companyLinkedin' in d) || url(d.companyLinkedin))
+        && (!('companyEmail' in d) || mail(d.companyEmail))
+        && (!('cnpjEmail' in d) || mail(d.cnpjEmail))
+        && (!('cnpjPhone' in d) || (d.cnpjPhone is string && d.cnpjPhone.matches('^([0-9]{8,13})?$')))
+        && (!('legalName' in d) || str(d.legalName, 160))
+        && (!('googleMapsUrl' in d) || url(d.googleMapsUrl))
+        && (!('facebook' in d) || url(d.facebook))
+        && (!('address' in d) || str(d.address, 300))
+        && (!('otherLinks' in d) || (d.otherLinks is list && d.otherLinks.size() <= 10))
+        && (!('sources' in d) || (d.sources is map && d.sources.size() <= 40))
+        && (!('channel' in d) || d.channel in ['', 'whatsapp', 'instagram', 'email'])
+        && (!('fitReason' in d) || str(d.fitReason, 600))
+        && (!('draft' in d) || validDraft(d.draft))
+        && (!('previewId' in d) || (d.previewId is string && d.previewId.matches('^[A-Za-z0-9]{0,40}$')))
+        && (!('batchId' in d) || (d.batchId is string && d.batchId.matches('^[A-Za-z0-9]{0,40}$')))
+        && (!('owner' in d) || str(d.owner, 40))
+        && (!('nextStep' in d) || validNextStep(d.nextStep))
+        && (!('meetingAt' in d) || tsOrNull(d.meetingAt))
+        && (!('lostReason' in d) || str(d.lostReason, 300));
+    }
+
+    function validDraft(m) {
+      return m is map
+        && m.keys().hasOnly(['channel', 'text', 'approved', 'approvedAt', 'sentAt'])
+        && (!('channel' in m) || m.channel in ['', 'whatsapp', 'instagram', 'email'])
+        && (!('text' in m) || str(m.text, 2000))
+        && (!('approved' in m) || m.approved is bool)
+        && (!('approvedAt' in m) || tsOrNull(m.approvedAt))
+        && (!('sentAt' in m) || tsOrNull(m.sentAt));
+    }
+
+    function validNextStep(m) {
+      return m is map
+        && m.keys().hasOnly(['text', 'dueAt'])
+        && (!('text' in m) || str(m.text, 300))
+        && (!('dueAt' in m) || tsOrNull(m.dueAt));
+    }
+
+    // Cadastro manual pelo admin (indicação ou contato que chegou fora do site)
+    function validCrmLead(d) {
+      return d.keys().hasOnly(crmEditable().concat(['createdAt', 'createdBy']))
+        && d.createdBy == 'admin'
+        && d.createdAt == request.time
+        && d.origin in ['manual', 'indicacao']
+        && d.status in stages() && d.status != 'contato'
+        && ((('name' in d) && d.name is string && d.name.size() >= 2)
+            || (('company' in d) && d.company is string && d.company.size() >= 2))
+        && validCrmFields(d);
+    }
+
+    function validInteraction(d) {
+      return d.keys().hasOnly(['type', 'text', 'channel', 'from', 'to', 'createdAt', 'createdBy'])
+        && d.type in ['mensagem_enviada', 'resposta', 'nota', 'mudanca_etapa', 'reuniao', 'proposta']
+        && str(d.text, 2000)
+        && d.channel in ['', 'whatsapp', 'instagram', 'email', 'telefone', 'outro']
+        && str(d.from, 40) && str(d.to, 40)
+        && d.createdAt == request.time
+        && d.createdBy == 'admin';
     }
 
     // ---------------- Todo o resto: fechado ----------------
