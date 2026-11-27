@@ -12,7 +12,13 @@ rules_version = '2';
 // - previews: sites modelo; visitante lê só a prévia ativa pelo id (nunca lista); admin gerencia
 // - rodadas: rodadas de prospecção; admin lê, cria e edita; nunca apaga (arquiva)
 // - admins: cada documento com o UID libera o painel; admins gerenciam outros admins
-//           pelo painel (ninguém remove o próprio acesso)
+//           pelo painel (ninguém remove o próprio acesso nem o do dono)
+// - bots: cada documento com o UID libera o CronUS a gravar prospecção (nunca entra no painel)
+// - config/owner: UID do dono do sistema; criado uma vez, nunca alterado nem apagado
+//
+// O CronUS (bot) lê leads, histórico, kit, prévias e rodadas; cria e atualiza só o que é
+// de prospecção (leads com origin 'cronus'); nunca apaga, nunca aprova mensagem, nunca
+// fecha ou perde lead e nunca toca em projetos, admins, bots ou config.
 // - qualquer outra coleção: bloqueada
 
 service cloud.firestore {
@@ -23,19 +29,66 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // CronUS: conta dedicada com documento em bots/{uid}
+    function isBot() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/bots/$(request.auth.uid));
+    }
+
+    function ownerPath() { return /databases/$(database)/documents/config/owner; }
+
     // ---------------- Admins ----------------
     match /admins/{uid} {
       // cada pessoa lê o próprio documento (o painel confere o acesso); admin lê todos
       allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
-      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validAdmin(request.resource.data);
+      // a mesma conta nunca é admin e bot ao mesmo tempo
+      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validAdmin(request.resource.data)
+        && !exists(/databases/$(database)/documents/bots/$(uid));
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'updatedAt'])
         && (!('name' in request.resource.data) || str(request.resource.data.name, 80))
         && (!('email' in request.resource.data) || mail(request.resource.data.email))
         && request.resource.data.updatedAt == request.time;
-      // remover o acesso de outra pessoa; o próprio, nunca (sempre sobra pelo menos um admin)
-      allow delete: if isAdmin() && request.auth.uid != uid;
+      // remover o acesso de outra pessoa; o próprio, nunca; o do dono, nunca.
+      // Sem config/owner criado, ninguém remove admin pelo app (proposital).
+      allow delete: if isAdmin() && request.auth.uid != uid
+        && exists(ownerPath())
+        && get(ownerPath()).data.uid != uid;
+    }
+
+    // ---------------- Bots (CronUS) ----------------
+    match /bots/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validBot(request.resource.data)
+        && !exists(/databases/$(database)/documents/admins/$(uid));
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'updatedAt'])
+        && (!('name' in request.resource.data) || str(request.resource.data.name, 80))
+        && (!('email' in request.resource.data) || mail(request.resource.data.email))
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    function validBot(d) {
+      return d.keys().hasOnly(['name', 'email', 'role', 'createdAt', 'createdBy'])
+        && str(d.name, 80) && d.name.size() >= 2
+        && mail(d.email)
+        && d.role == 'bot'
+        && d.createdAt == request.time
+        && d.createdBy == request.auth.uid;
+    }
+
+    // ---------------- Dono do sistema ----------------
+    // Documento único config/owner { uid, createdAt }. Criado uma vez (bootstrap) e imutável.
+    match /config/{docId} {
+      allow get, list: if isAdmin();
+      allow create: if isAdmin() && docId == 'owner'
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid is string && request.resource.data.uid.matches('^[A-Za-z0-9]{20,40}$')
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
     }
 
     function validAdmin(d) {
@@ -49,17 +102,17 @@ service cloud.firestore {
 
     // ---------------- Sites modelo (prévias) ----------------
     match /previews/{id} {
-      // público abre só a prévia ativa, pelo id aleatório; nunca lista
-      allow get: if resource.data.active == true || isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin()
+      // público abre só a prévia ativa, pelo id aleatório; nunca lista.
+      // A condição barata vem primeiro: o visitante não paga as consultas de papel.
+      allow get: if resource.data.active == true || isAdmin() || isBot();
+      allow list: if isAdmin() || isBot();
+      allow create: if ((isAdmin() && request.resource.data.createdBy == 'admin')
+          || (isBot() && request.resource.data.createdBy == 'cronus'))
         && validPreview(request.resource.data)
-        && request.resource.data.createdBy == 'admin'
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
-      allow update: if isAdmin()
+      allow update: if (isAdmin() || isBot())
         && validPreview(request.resource.data)
-        && request.resource.data.leadId == resource.data.leadId
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time;
@@ -125,17 +178,15 @@ service cloud.firestore {
         && (!('benefits' in t) || list6(t.benefits, 120));
     }
 
-    // Prévia é pública por link: nada interno do lead (contatos, cidade, notas, motivos)
+    // Prévia é pública por link: nada interno do lead (contatos, cidade, notas, motivos,
+    // id do lead ou nicho). A ligação com o lead fica no índice privado leads/{id}/previews.
     function validPreview(d) {
-      return d.keys().hasOnly(['leadId', 'niche', 'template', 'format', 'formatReason',
+      return d.keys().hasOnly(['template', 'format',
                                'companyName', 'tagline', 'mainService', 'services',
                                'primaryColor', 'secondaryColor', 'logo', 'products', 'categories',
                                'texts', 'active', 'createdBy', 'createdAt', 'updatedAt'])
-        && d.leadId is string && d.leadId.matches('^[A-Za-z0-9]{1,40}$')
-        && (!('niche' in d) || (d.niche is string && d.niche.matches('^([a-z0-9-]{2,60})?$')))
         && d.template is string && d.template.matches('^[a-z0-9_-]{2,60}$')
         && d.format in ['landing', 'institucional', 'catalogo']
-        && (!('formatReason' in d) || str(d.formatReason, 300))
         && str(d.companyName, 120) && d.companyName.size() >= 2
         && (!('tagline' in d) || str(d.tagline, 120))
         && (!('mainService' in d) || str(d.mainService, 80))
@@ -156,7 +207,15 @@ service cloud.firestore {
         && (!('products' in d) || validProducts(d.products))
         && (!('categories' in d) || list12(d.categories, 40))
         && d.updatedAt == request.time
-        && d.updatedBy == 'admin';
+        && d.updatedBy in ['admin', 'cronus'];
+    }
+
+    // Índice privado de prévias do lead: id igual ao da prévia pública
+    function validPreviewIndex(d) {
+      return d.keys().hasOnly(['niche', 'formatReason', 'createdAt'])
+        && (!('niche' in d) || (d.niche is string && d.niche.matches('^([a-z0-9-]{2,60})?$')))
+        && (!('formatReason' in d) || str(d.formatReason, 300))
+        && d.createdAt is timestamp;
     }
 
     function validBrand(m) {
@@ -171,12 +230,15 @@ service cloud.firestore {
 
     // ---------------- Rodadas de prospecção ----------------
     match /rodadas/{id} {
-      allow get, list: if isAdmin();
-      allow create: if isAdmin()
-        && request.resource.data.createdBy == 'admin'
+      allow get, list: if isAdmin() || isBot();
+      allow create: if ((isAdmin() && request.resource.data.createdBy == 'admin')
+          || (isBot() && request.resource.data.createdBy == 'cronus'))
         && request.resource.data.createdAt == request.time
         && validRodada(request.resource.data);
-      allow update: if isAdmin()
+      // o bot atualiza tudo menos arquivar (arquivar é decisão do admin)
+      allow update: if (isAdmin() || (isBot()
+          && (!('status' in request.resource.data.diff(resource.data).affectedKeys())
+              || request.resource.data.status != 'arquivada')))
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['niche', 'nicheLabel', 'region', 'criteria', 'funnel', 'status', 'notes', 'updatedAt'])
         && validRodada(request.resource.data);
@@ -246,25 +308,50 @@ service cloud.firestore {
     match /leads/{id} {
       // Formulário do site (exatamente como antes) ou cadastro manual pelo admin
       allow create: if validLead(request.resource.data)
-        || (isAdmin() && validCrmLead(request.resource.data));
-      allow get, list: if isAdmin();
-      // Admin edita só campos de CRM; o documento resultante precisa continuar válido
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(crmEditable())
+        || (isAdmin() && validCrmLead(request.resource.data))
+        || (isBot() && validBotLead(request.resource.data));
+      allow get, list: if isAdmin() || isBot();
+      // Admin edita só campos de CRM; o documento resultante precisa continuar válido.
+      // Bot edita só leads de prospecção (origin 'cronus') e só os campos dele.
+      allow update: if ((isAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(crmEditable()))
+          || (isBot() && resource.data.origin == 'cronus'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(botEditable())
+            && botLimits(request.resource.data, resource.data,
+                         request.resource.data.diff(resource.data).affectedKeys())))
         && validCrmFields(request.resource.data);
       allow delete: if isAdmin();
 
       // Kit da marca (logo e produtos): documento único 'marca'. Apagado só na exclusão completa.
+      // O bot grava só no kit de lead de prospecção.
       match /kit/{docId} {
-        allow get, list: if isAdmin();
-        allow create, update: if isAdmin() && docId == 'marca' && validKit(request.resource.data);
+        allow get, list: if isAdmin() || isBot();
+        allow create, update: if docId == 'marca'
+          && ((isAdmin() && request.resource.data.updatedBy == 'admin')
+            || (isBot() && request.resource.data.updatedBy == 'cronus'
+              && getAfter(/databases/$(database)/documents/leads/$(id)).data.origin == 'cronus'))
+          && validKit(request.resource.data);
+        allow delete: if isAdmin();
+      }
+
+      // Índice privado das prévias do lead (a prévia pública não sabe de qual lead é)
+      match /previews/{pid} {
+        allow get, list: if isAdmin() || isBot();
+        allow create: if (isAdmin() || isBot())
+          && validPreviewIndex(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        allow update: if (isAdmin() || isBot())
+          && validPreviewIndex(request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if isAdmin();
       }
 
       // Histórico: ninguém edita. O admin apaga só junto com o lead (exclusão completa, LGPD).
       match /interacoes/{iid} {
-        allow get, list: if isAdmin();
-        allow create: if isAdmin() && validInteraction(request.resource.data);
+        allow get, list: if isAdmin() || isBot();
+        allow create: if ((isAdmin() && request.resource.data.createdBy == 'admin')
+            || (isBot() && request.resource.data.createdBy == 'cronus'))
+          && validInteraction(request.resource.data);
         allow delete: if isAdmin();
         allow update: if false;
       }
@@ -455,7 +542,51 @@ service cloud.firestore {
         && d.channel in ['', 'whatsapp', 'instagram', 'email', 'telefone', 'outro']
         && str(d.from, 40) && str(d.to, 40)
         && d.createdAt == request.time
-        && d.createdBy == 'admin';
+        && d.createdBy in ['admin', 'cronus'];
+    }
+
+    // Campos que o CronUS pode gravar (lista fechada). Fora dela: notes, owner, lostReason,
+    // discardReason, origin, createdAt, createdBy e todos os campos vindos do site.
+    function botEditable() {
+      return [
+        'status', 'updatedAt', 'stageAt', 'name', 'company', 'whatsapp', 'email', 'need',
+        'role', 'instagram', 'niche', 'city', 'state', 'currentSite', 'siteStatus', 'siteScore',
+        'siteReason', 'googleRating', 'googleReviews', 'cnpj', 'companyYears', 'phone', 'linkedin',
+        'companyLinkedin', 'companyEmail', 'cnpjEmail', 'cnpjPhone', 'legalName', 'googleMapsUrl',
+        'facebook', 'address', 'otherLinks', 'sources', 'channel', 'fitReason', 'draft', 'previewId',
+        'batchId', 'nextStep', 'meetingAt', 'prospectState', 'drafts', 'qualification',
+        'disqualifyReason', 'format', 'formatReason', 'brand'
+      ];
+    }
+    function botStages() { return ['novo', 'mensagem_pronta', 'abordado', 'respondeu', 'em_conversa', 'reuniao']; }
+
+    // A mensagem do bot nasce pendente da aprovação do Pedro
+    function botDraft(m) {
+      return (!('approved' in m) || m.approved == false)
+        && (!('approvedAt' in m) || m.approvedAt == null)
+        && (!('sentAt' in m) || m.sentAt == null);
+    }
+
+    // Limites do bot num update (k = campos alterados)
+    function botLimits(n, o, k) {
+      return (!('status' in k) || n.status in botStages())
+        && (!('prospectState' in k) || (n.prospectState == 'pendente'
+            && !(('prospectState' in o) && o.prospectState in ['aprovado', 'descartado'])))
+        && (!('draft' in k) || botDraft(n.draft));
+    }
+
+    // Lead criado pelo CronUS
+    function validBotLead(d) {
+      return d.keys().hasOnly(botEditable().concat(['origin', 'createdAt', 'createdBy']))
+        && d.origin == 'cronus'
+        && d.createdBy == 'cronus'
+        && d.createdAt == request.time
+        && d.status in botStages()
+        && (!('prospectState' in d) || d.prospectState == 'pendente')
+        && (!('draft' in d) || botDraft(d.draft))
+        && ((('name' in d) && d.name is string && d.name.size() >= 2)
+            || (('company' in d) && d.company is string && d.company.size() >= 2))
+        && validCrmFields(d);
     }
 
     // ---------------- Todo o resto: fechado ----------------
