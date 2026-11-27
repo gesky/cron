@@ -1,0 +1,9 @@
+# Dependências e logs dos testes de regras (só para o emulador local)
+tests/node_modules/
+tests/npm-debug.log*
+tests/firebase-debug.log*
+tests/firestore-debug.log*
+tests/ui-debug.log*
+npm-debug.log*
+yarn-debug.log*
+.DS_Store

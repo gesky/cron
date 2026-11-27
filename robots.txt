@@ -3,5 +3,7 @@ User-agent: *
 Allow: /
 # Rascunhos de site enviados a clientes (links privados)
 Disallow: /modelo/
+# Testes das regras do Firestore (só para o emulador local)
+Disallow: /tests/
 
 Sitemap: https://cronwebstudio.com.br/sitemap.xml
