@@ -247,7 +247,17 @@
           </div>
         </header>
         <p class="muted users-intro">Quem está nesta lista entra no painel e pode fazer tudo, inclusive adicionar e remover outros usuários. Você não pode remover o seu próprio acesso.</p>
+        <p class="owner-warn" id="ownerWarn" hidden>Ainda não existe o documento <code>config/owner</code> no Firebase. Enquanto ele não for criado, ninguém consegue remover usuários. Veja o passo a passo no SETUP.md.</p>
         <div class="users" id="userList" aria-live="polite"></div>
+
+        <div class="bots-head">
+          <div>
+            <h2>Assistente</h2>
+            <p class="muted">Conta do CronUS que grava prospecção pela API. Não entra no painel. A conta é criada no console do Firebase; aqui você só libera o UID.</p>
+          </div>
+          <button class="btn btn--ghost" id="newBot" type="button">Liberar assistente</button>
+        </div>
+        <div class="users" id="botList" aria-live="polite"></div>
       </section>
 
       <section class="tab" id="tab-projects" hidden>
@@ -637,6 +647,33 @@
         <div class="drawer__foot">
           <button class="btn btn--ghost" type="button" data-close>Cancelar</button>
           <button class="btn btn--lime" type="submit" id="pvSave">Salvar prévia</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- ===================== GAVETA: ASSISTENTE ===================== -->
+  <div class="drawer" id="botDrawer" hidden>
+    <div class="drawer__backdrop" data-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="bTitle">
+      <header class="drawer__head">
+        <div>
+          <p class="top__eyebrow">Acesso por API</p>
+          <h2 id="bTitle">Liberar assistente</h2>
+        </div>
+        <button class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <form class="drawer__body" id="botForm" novalidate>
+        <p class="muted">Crie antes a conta do assistente no console do Firebase (Authentication > Usuários > Adicionar usuário), com um e-mail só dele e uma senha forte guardada no cofre. Depois cole aqui o UID da conta. Nenhuma senha passa pelo painel.</p>
+        <label class="f"><span>UID da conta</span><input name="uid" maxlength="40" autocomplete="off" required></label>
+        <div class="grid2">
+          <label class="f"><span>Nome</span><input name="name" maxlength="80" value="" placeholder="CronUS" autocomplete="off" required></label>
+          <label class="f"><span>E-mail da conta</span><input name="email" type="email" maxlength="160" autocomplete="off" required></label>
+        </div>
+        <p class="form-msg" id="bMsg" role="alert"></p>
+        <div class="drawer__foot">
+          <button class="btn btn--ghost" type="button" data-close>Cancelar</button>
+          <button class="btn btn--lime" type="submit" id="bSave">Liberar</button>
         </div>
       </form>
     </aside>
