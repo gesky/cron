@@ -165,6 +165,43 @@
         });
       });
     };
+    // Prévias antigas (fase 3) guardavam leadId, niche e formatReason no documento público.
+    // Toda gravação numa prévia remove esses campos, para o link público parar de entregá-los.
+    var cleanPublic = function (data) {
+      data.leadId = FV.delete();
+      data.niche = FV.delete();
+      data.formatReason = FV.delete();
+      return data;
+    };
+    // Produtos e listas no formato das regras (modelo/produtos.js): ao gravar, empacota;
+    // ao ler, devolve a lista de objetos de sempre.
+    var PR = window.CRON_PRODUTOS;
+    // devolve uma cópia: quem chamou continua com a lista de objetos
+    var packLists = function (src) {
+      var data = Object.assign({}, src);
+      if ('products' in data) data.products = PR.pack(data.products);
+      if ('categories' in data) data.categories = PR.cleanList(data.categories, 12, 40);
+      if ('services' in data) data.services = PR.cleanList(data.services, 8, 60);
+      if (data.texts && typeof data.texts === 'object') {
+        data.texts = Object.assign({}, data.texts);
+        ['diferenciais', 'benefits'].forEach(function (k) {
+          if (k in data.texts) data.texts[k] = PR.cleanList(data.texts[k], 6, 120);
+        });
+      }
+      return data;
+    };
+    // ¶ separa os campos nas regras dos leads: some de qualquer texto gravado pelo painel
+    var plain = function (o) { return o && typeof o === 'object' && Object.getPrototypeOf(o) === Object.prototype; };
+    var noSep = function (v) {
+      if (typeof v === 'string') return v.indexOf('\u00b6') === -1 ? v : v.replace(/\u00b6/g, ' ');
+      if (Array.isArray(v)) return v.map(noSep);
+      if (plain(v)) { var o = {}; Object.keys(v).forEach(function (k) { o[k] = noSep(v[k]); }); return o; }
+      return v;
+    };
+    var unpackDoc = function (d) {
+      if (d && 'products' in d) d.products = PR.unpack(d.products);
+      return d;
+    };
     api = {
       now: function () { return FV.serverTimestamp(); },
       del: function () { return FV.delete(); },
@@ -180,7 +217,7 @@
         data.updatedAt = FV.serverTimestamp();
         var ref = leadsCol.doc(id);
         var batch = db.batch();
-        batch.update(ref, data);
+        batch.update(ref, noSep(data));
         addInter(batch, ref, inters);
         return batch.commit();
       },
@@ -190,7 +227,7 @@
         data.stageAt = FV.serverTimestamp();
         data.createdBy = 'admin';
         var batch = db.batch();
-        batch.set(ref, data);
+        batch.set(ref, noSep(data));
         addInter(batch, ref, inters);
         return batch.commit().then(function () { return ref.id; });
       },
@@ -200,10 +237,15 @@
         return Promise.all([
           ref.collection('interacoes').get(),
           ref.collection('kit').get(),
+          ref.collection('previews').get(),
+          // prévias criadas antes do índice privado ainda guardam o leadId no documento público
           db.collection('previews').where('leadId', '==', id).get()
         ]).then(function (res) {
-          var refs = [];
-          res.forEach(function (snap) { snap.docs.forEach(function (d) { refs.push(d.ref); }); });
+          var refs = [], seen = {};
+          var push = function (r) { if (!seen[r.path]) { seen[r.path] = 1; refs.push(r); } };
+          res.forEach(function (snap) { snap.docs.forEach(function (d) { push(d.ref); }); });
+          // cada item do índice aponta para uma prévia pública com o mesmo id
+          res[2].docs.forEach(function (d) { push(db.collection('previews').doc(d.id)); });
           var chain = Promise.resolve();
           for (var i = 0; i < refs.length; i += 400) {
             (function (part) {
@@ -256,7 +298,7 @@
               part.forEach(function (it) {
                 var ref = leadsCol.doc(it.id);
                 it.data.updatedAt = FV.serverTimestamp();
-                b.update(ref, it.data);
+                b.update(ref, noSep(it.data));
                 addInter(b, ref, it.inters);
               });
               return b.commit();
@@ -267,45 +309,81 @@
       },
       // ---------- Kit da marca e sites modelo ----------
       getKit: function (leadId) {
-        return leadsCol.doc(leadId).collection('kit').doc('marca').get().then(function (d) { return d.exists ? d.data() : null; });
+        return leadsCol.doc(leadId).collection('kit').doc('marca').get().then(function (d) { return d.exists ? unpackDoc(d.data()) : null; });
       },
       saveKit: function (leadId, data) {
         data.updatedAt = FV.serverTimestamp();
         data.updatedBy = 'admin';
-        return leadsCol.doc(leadId).collection('kit').doc('marca').set(data);
+        return leadsCol.doc(leadId).collection('kit').doc('marca').set(packLists(data));
       },
+      // Lista pelo índice privado (leads/{id}/previews) e junta as prévias antigas que ainda têm leadId
       listPreviews: function (leadId) {
-        return db.collection('previews').where('leadId', '==', leadId).get().then(function (snap) {
-          var list = [];
-          snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
-          return list.sort(function (a, b) { return (toDate(b.createdAt) || 0) - (toDate(a.createdAt) || 0); });
+        return Promise.all([
+          leadsCol.doc(leadId).collection('previews').get(),
+          db.collection('previews').where('leadId', '==', leadId).get().catch(function () { return { docs: [] }; })
+        ]).then(function (res) {
+          var meta = {};
+          res[0].docs.forEach(function (d) { meta[d.id] = d.data(); });
+          res[1].docs.forEach(function (d) { if (!meta[d.id]) meta[d.id] = {}; });
+          return Promise.all(Object.keys(meta).map(function (pid) {
+            return db.collection('previews').doc(pid).get().then(function (d) {
+              return d.exists ? Object.assign({ id: d.id }, unpackDoc(d.data()), { formatReason: meta[pid].formatReason || '', niche: meta[pid].niche || '' }) : null;
+            }).catch(function () { return null; });
+          }));
+        }).then(function (list) {
+          return list.filter(Boolean).sort(function (a, b) { return (toDate(b.createdAt) || 0) - (toDate(a.createdAt) || 0); });
         });
       },
       getPreview: function (id) {
-        return db.collection('previews').doc(id).get().then(function (d) { return d.exists ? Object.assign({ id: d.id }, d.data()) : null; });
+        return db.collection('previews').doc(id).get().then(function (d) { return d.exists ? Object.assign({ id: d.id }, unpackDoc(d.data())) : null; });
       },
       // Cria a prévia, liga ao lead e registra no histórico no mesmo batch. A anterior é desativada.
-      createPreview: function (data, oldId) {
+      // Cria a prévia pública (sem nada interno), o índice privado no lead, liga ao lead,
+      // desativa a anterior e registra no histórico, tudo no mesmo batch.
+      // meta: { niche, formatReason } vão só para o índice privado.
+      createPreview: function (data, leadId, meta, oldId) {
         var ref = db.collection('previews').doc();
-        var lead = leadsCol.doc(data.leadId);
+        var lead = leadsCol.doc(leadId);
         data.createdAt = FV.serverTimestamp();
         data.updatedAt = FV.serverTimestamp();
         data.createdBy = 'admin';
         data.active = true;
         var b = db.batch();
-        b.set(ref, data);
+        b.set(ref, packLists(data));
+        b.set(lead.collection('previews').doc(ref.id), {
+          niche: (meta && meta.niche) || '', formatReason: (meta && meta.formatReason) || '', createdAt: FV.serverTimestamp()
+        });
         b.update(lead, { previewId: ref.id, updatedAt: FV.serverTimestamp() });
         addInter(b, lead, [{ type: 'nota', text: oldId ? 'Site modelo gerado de novo.' : 'Site modelo gerado.' }]);
-        if (oldId) b.update(db.collection('previews').doc(oldId), { active: false, updatedAt: FV.serverTimestamp() });
+        if (oldId) b.update(db.collection('previews').doc(oldId), cleanPublic({ active: false, updatedAt: FV.serverTimestamp() }));
         return b.commit().then(function () { return ref.id; });
       },
       updatePreview: function (id, data) {
         data.updatedAt = FV.serverTimestamp();
-        return db.collection('previews').doc(id).update(data);
+        return db.collection('previews').doc(id).update(cleanPublic(packLists(data)));
       },
       setPreviewActive: function (id, active) {
-        return db.collection('previews').doc(id).update({ active: !!active, updatedAt: FV.serverTimestamp() });
+        return db.collection('previews').doc(id).update(cleanPublic({ active: !!active, updatedAt: FV.serverTimestamp() }));
       },
+      // ---------- Dono e CronUS ----------
+      getOwner: function () {
+        return db.collection('config').doc('owner').get().then(function (d) { return d.exists ? (d.data().uid || '') : ''; })
+          .catch(function () { return ''; });
+      },
+      watchBots: function (cb, onErr) {
+        return db.collection('bots').onSnapshot(function (snap) {
+          var list = [];
+          snap.forEach(function (d) { list.push(Object.assign({ id: d.id }, d.data())); });
+          cb(list);
+        }, onErr);
+      },
+      addBot: function (uid, data) {
+        data.createdAt = FV.serverTimestamp();
+        data.createdBy = C.auth.currentUser.uid;
+        data.role = 'bot';
+        return db.collection('bots').doc(uid).set(data);
+      },
+      removeBot: function (uid) { return db.collection('bots').doc(uid).delete(); },
       // ---------- Rodadas de prospecção ----------
       watchRodadas: function (cb, onErr) {
         return db.collection('rodadas').orderBy('createdAt', 'desc').onSnapshot(function (snap) {
@@ -345,7 +423,12 @@
         data.updatedAt = FV.serverTimestamp();
         return db.collection('admins').doc(uid).update(data);
       },
-      removeAdmin: function (uid) { return db.collection('admins').doc(uid).delete(); },
+      removeAdmin: function (uid) {
+        return api.getOwner().then(function (owner) {
+          if (owner && owner === uid) throw { code: 'owner-protected' };
+          return db.collection('admins').doc(uid).delete();
+        });
+      },
       // Cria a conta de login num app secundário, para não trocar a sua sessão.
       // Sem senha definida, gera uma aleatória e manda o e-mail para a pessoa criar a dela.
       createAuthUser: function (email, password) {
@@ -981,30 +1064,45 @@
     mem.leads.forEach(function (l) { if (l.id === 'l3' || l.id === 'l4') l.prospectState = 'aprovado'; });
     // Sites modelo de exemplo (os mesmos de modelo/demo-data.js, para abrir em modelo/?demo=<id>)
     var DM = window.CRON_MODELO_DEMO;
-    mem.previews = DM ? DM.list().map(function (p) { return Object.assign({ createdAt: ago(3 * H), updatedAt: ago(3 * H), createdBy: 'admin' }, p); }) : [];
+    mem.pindex = {}; // leadId -> [{ id, niche, formatReason, createdAt }] (índice privado)
+    mem.previews = DM ? DM.list().map(function (p) {
+      var d = p.demo || {};
+      delete p.demo;
+      (mem.pindex[d.leadId] = mem.pindex[d.leadId] || []).push({ id: p.id, niche: d.niche || '', formatReason: d.formatReason || '', createdAt: ago(3 * H) });
+      p._lead = d.leadId;
+      p._formatReason = d.formatReason || '';
+      return Object.assign({ createdAt: ago(3 * H), updatedAt: ago(3 * H), createdBy: 'admin' }, p);
+    }) : [];
+    mem.owner = 'demoAdminUid000000000001';
+    mem.bots = [{ id: 'demoBotUid00000000000001', name: 'CronUS (exemplo)', email: 'cronus@cronwebstudio.com.br', role: 'bot', createdAt: ago(2 * D) }];
     mem.kits = {};
     var setQ = function (id, o) { var l = mem.leads.find(function (x) { return x.id === id; }); if (l) Object.assign(l, o); };
-    var byLead = function (leadId) { return mem.previews.find(function (p) { return p.leadId === leadId; }); };
+    var byLead = function (leadId) { return mem.previews.find(function (p) { return (p._lead || p.leadIdDemo) === leadId; }); };
     mem.previews.forEach(function (p) {
-      setQ(p.leadId, {
-        qualification: 'qualificado', format: p.format, formatReason: p.formatReason || '', previewId: p.id,
+      var leadId = p._lead, fr = p._formatReason;
+      delete p._lead; delete p._formatReason;
+      p.leadIdDemo = leadId;
+      setQ(leadId, {
+        qualification: 'qualificado', format: p.format, formatReason: fr, previewId: p.id,
         brand: { primaryColor: p.primaryColor || '', secondaryColor: p.secondaryColor || '', tagline: p.tagline || '', mainService: p.mainService || '', services: (p.services || []).slice() }
       });
-      mem.kits[p.leadId] = { logo: p.logo || '', products: (p.products || []).slice(), categories: (p.categories || []).slice() };
+      mem.kits[leadId] = { logo: p.logo || '', products: (p.products || []).slice(), categories: (p.categories || []).slice() };
     });
+    var byLeadIdx = function (leadId) { return (mem.pindex[leadId] || []).map(function (x) { return x.id; }); };
+    var publicCopy = function (p) { var o = clone(p); delete o.leadIdDemo; return o; };
     if (byLead('l4')) { var l4 = mem.leads.find(function (x) { return x.id === 'l4'; }); l4.draft.previewId = byLead('l4').id; l4.draft.text += ' {link}'; }
     setQ('l15', { qualification: 'desqualificado', disqualifyReason: 'Já tem site novo, feito este ano.' });
     setQ('l16', { qualification: '', format: '' });
     // Prévias do modo demo também ficam no navegador, para a página modelo/?demo= encontrar
     var saveLocal = function (p) {
-      try { localStorage.setItem('cron_demo_preview_' + p.id, JSON.stringify(p)); } catch (e) {}
+      try { localStorage.setItem('cron_demo_preview_' + p.id, JSON.stringify(publicCopy(p))); } catch (e) {}
     };
     mem.previews.forEach(saveLocal);
     mem.admins = [
       { id: 'demoAdminUid000000000001', name: 'Pedro Spadotto', email: 'pedro@cronwebstudio.com.br', role: 'admin', createdAt: ago(60 * D) },
       { id: 'demoAdminUid000000000002', name: '', email: '', createdAt: ago(30 * D) }
     ];
-    var listener = null, interListeners = {}, rodListener = null, admListener = null;
+    var listener = null, interListeners = {}, rodListener = null, admListener = null, botListener = null;
     function emitRod() { if (rodListener) rodListener(mem.rodadas.slice().sort(function (a, b) { return b.createdAt - a.createdAt; })); }
     function emitAdm() { if (admListener) admListener(mem.admins.slice()); }
     function emit() { if (listener) listener(mem.leads.slice().sort(function (a, b) { return b.createdAt - a.createdAt; })); }
@@ -1052,11 +1150,13 @@
         mem.leads = mem.leads.filter(function (x) { return x.id !== id; });
         delete mem.inter[id];
         delete mem.kits[id];
+        var ids = byLeadIdx(id);
         mem.previews = mem.previews.filter(function (p) {
-          if (p.leadId !== id) return true;
+          if (ids.indexOf(p.id) === -1) return true;
           try { localStorage.removeItem('cron_demo_preview_' + p.id); } catch (e) {}
           return false;
         });
+        delete mem.pindex[id];
         return wait().then(emit);
       },
       getKit: function (leadId) { return wait(mem.kits[leadId] ? clone(mem.kits[leadId]) : null); },
@@ -1065,20 +1165,35 @@
         return wait();
       },
       listPreviews: function (leadId) {
-        return wait(clone(mem.previews.filter(function (p) { return p.leadId === leadId; }))
-          .sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }));
+        var idx = mem.pindex[leadId] || [];
+        return wait(idx.map(function (m) {
+          var p = mem.previews.find(function (x) { return x.id === m.id; });
+          return p ? Object.assign(publicCopy(p), { formatReason: m.formatReason, niche: m.niche }) : null;
+        }).filter(Boolean).sort(function (a, b) { return new Date(b.createdAt) - new Date(a.createdAt); }));
       },
-      getPreview: function (id) { var p = mem.previews.find(function (x) { return x.id === id; }); return wait(p ? clone(p) : null); },
-      createPreview: function (data, oldId) {
+      getPreview: function (id) { var p = mem.previews.find(function (x) { return x.id === id; }); return wait(p ? publicCopy(p) : null); },
+      getOwner: function () { return wait(mem.owner); },
+      watchBots: function (cb) { botListener = cb; setTimeout(function () { cb(mem.bots.slice()); }, 120); return function () { botListener = null; }; },
+      addBot: function (uid, data) {
+        if (mem.bots.some(function (b) { return b.id === uid; }) || mem.admins.some(function (a) { return a.id === uid; })) return Promise.reject({ code: 'already-exists' });
+        mem.bots.push(Object.assign({ id: uid, role: 'bot', createdAt: new Date(), createdBy: mem.owner }, data));
+        return wait().then(function () { if (botListener) botListener(mem.bots.slice()); });
+      },
+      removeBot: function (uid) {
+        mem.bots = mem.bots.filter(function (b) { return b.id !== uid; });
+        return wait().then(function () { if (botListener) botListener(mem.bots.slice()); });
+      },
+      createPreview: function (data, leadId, meta, oldId) {
         var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', id = '';
         for (var i = 0; i < 20; i++) id += chars.charAt(Math.floor(Math.random() * chars.length));
         var p = Object.assign({}, clone(data), { id: id, active: true, createdBy: 'admin', createdAt: new Date(), updatedAt: new Date() });
         mem.previews.push(p);
         saveLocal(p);
+        (mem.pindex[leadId] = mem.pindex[leadId] || []).push({ id: id, niche: (meta && meta.niche) || '', formatReason: (meta && meta.formatReason) || '', createdAt: new Date() });
         if (oldId) { var o = mem.previews.find(function (x) { return x.id === oldId; }); if (o) { o.active = false; saveLocal(o); } }
-        var l = mem.leads.find(function (x) { return x.id === data.leadId; });
+        var l = mem.leads.find(function (x) { return x.id === leadId; });
         if (l) { l.previewId = id; l.updatedAt = new Date(); }
-        pushInter(data.leadId, [{ type: 'nota', text: oldId ? 'Site modelo gerado de novo.' : 'Site modelo gerado.' }]);
+        pushInter(leadId, [{ type: 'nota', text: oldId ? 'Site modelo gerado de novo.' : 'Site modelo gerado.' }]);
         return wait(id).then(function (v) { emit(); return v; });
       },
       updatePreview: function (id, data) {
@@ -1124,7 +1239,11 @@
         if (a) apply(a, data);
         return wait().then(emitAdm);
       },
-      removeAdmin: function (uid) { mem.admins = mem.admins.filter(function (a) { return a.id !== uid; }); return wait().then(emitAdm); },
+      removeAdmin: function (uid) {
+        if (uid === mem.owner) return Promise.reject({ code: 'owner-protected' });
+        mem.admins = mem.admins.filter(function (a) { return a.id !== uid; });
+        return wait().then(emitAdm);
+      },
       createAuthUser: function (email) {
         if (/existe@/.test(email)) return Promise.reject({ code: 'auth/email-already-in-use' });
         return wait('demoUid' + Math.random().toString(36).slice(2, 12) + 'xxxxxxxxxx');

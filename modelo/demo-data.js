@@ -1,6 +1,8 @@
 // Cron Web Studio · Prévias de exemplo para o modo demonstração
 // Usadas em modelo/?demo=<id> (só no computador) e no modo demo do painel.
 // Empresas fictícias, claramente de exemplo. Imagens geradas na hora pelo navegador (canvas).
+// O campo `demo` só existe aqui: diz ao painel de exemplo a qual lead cada prévia pertence
+// (na vida real isso fica no índice privado leads/{id}/previews, nunca na prévia pública).
 
 (function () {
   'use strict';
@@ -45,15 +47,15 @@
   function build() {
     return [
       {
-        id: 'demoLanding000000001', leadId: 'l4', niche: 'construcao-vidracaria', template: '_base',
-        format: 'landing', formatReason: 'Um serviço principal e foco em gerar pedidos de orçamento.',
+        id: 'demoLanding000000001', template: '_base', format: 'landing',
+        demo: { leadId: 'l4', niche: 'construcao-vidracaria', formatReason: 'Um serviço principal e foco em gerar pedidos de orçamento.' },
         companyName: 'Vidraçaria Horizonte (exemplo)', tagline: 'Vidros sob medida para casas e empresas',
         mainService: 'Box, espelhos e fechamentos em vidro', services: ['Box para banheiro', 'Espelhos sob medida', 'Fechamento de sacadas'],
         primaryColor: '#0e7490', secondaryColor: '#f59e0b', logo: '', products: [], categories: [], texts: {}, active: true
       },
       {
-        id: 'demoInstitucional001', leadId: 'l14', niche: 'industria-moveis', template: 'industria-moveis',
-        format: 'institucional', formatReason: 'Empresa de serviços com várias frentes e sem site próprio.',
+        id: 'demoInstitucional001', template: 'industria-moveis', format: 'institucional',
+        demo: { leadId: 'l14', niche: 'industria-moveis', formatReason: 'Empresa de serviços com várias frentes e sem site próprio.' },
         companyName: 'Arte em Madeira Planejados (exemplo)', tagline: 'Móveis planejados do projeto à montagem',
         mainService: 'Móveis planejados', services: ['Cozinhas planejadas', 'Dormitórios', 'Home office', 'Painéis e estantes', 'Projetos comerciais'],
         primaryColor: '#7c4a2d', secondaryColor: '#d6b48a', logo: logo('A', '#7c4a2d', '#ffffff'), products: [], categories: [],
@@ -61,8 +63,8 @@
         active: true
       },
       {
-        id: 'demoCatalogo00000001', leadId: 'l13', niche: 'industria-moveis', template: '_base',
-        format: 'catalogo', formatReason: 'Linha grande de produtos e venda por orçamento.',
+        id: 'demoCatalogo00000001', template: '_base', format: 'catalogo',
+        demo: { leadId: 'l13', niche: 'industria-moveis', formatReason: 'Linha grande de produtos e venda por orçamento.' },
         companyName: 'Bellini Estofados (exemplo)', tagline: 'Estofados feitos para durar',
         mainService: 'Estofados sob medida', services: ['Sofás sob medida', 'Poltronas', 'Reforma de estofados'],
         primaryColor: '#c6ff02', secondaryColor: '#1a1a1a', logo: logo('B', '#1a1a1a', '#c6ff02'),
@@ -93,7 +95,10 @@
     list: function () { return build().map(withImages); },
     get: function (id) {
       var p = build().find(function (x) { return x.id === id; });
-      return p ? withImages(p) : null;
+      if (!p) return null;
+      p = withImages(p);
+      delete p.demo;
+      return p;
     }
   };
 })();

@@ -150,3 +150,15 @@
   .pr-switch { width: 100%; }
   .pr-switch button { flex: 1; justify-content: center; }
 }
+
+/* ---------- Dono e assistente ---------- */
+.users .user__owner { font-size: .68rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; background: var(--ink); color: #fff; padding: 2px 8px; border-radius: 999px; }
+.users .user__bot { font-size: .68rem; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; background: var(--mist); color: var(--ink-70); padding: 2px 8px; border-radius: 999px; }
+.avatar--bot { display: grid; place-items: center; background: var(--ink); color: var(--lime); }
+.avatar--bot svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.owner-warn { max-width: 860px; margin: 0 0 14px; font-size: .86rem; color: #7a5600; background: #fff1cc; padding: 12px 14px; border-radius: 12px; }
+.owner-warn code { font-size: .82rem; }
+.bots-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; max-width: 860px; margin: 40px 0 14px; }
+.bots-head h2 { font-size: 1.15rem; margin-bottom: 4px; }
+.bots-head .muted { max-width: 560px; font-size: .86rem; }
+.bots-head .btn { min-height: 44px; }

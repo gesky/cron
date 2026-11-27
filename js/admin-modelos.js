@@ -412,12 +412,10 @@
   function buildPreview(l, kit) {
     var b = l.brand || {};
     var cat = l.format === 'catalogo';
+    // Documento público: nada de id do lead, nicho ou motivo (vão para o índice privado)
     var d = {
-      leadId: l.id,
-      niche: slugOk(l.niche) ? l.niche : '',
       template: ALLOWED.indexOf(l.niche) !== -1 ? l.niche : '_base',
       format: l.format,
-      formatReason: String(l.formatReason || '').slice(0, 300),
       companyName: String(l.company || '').trim().slice(0, 120),
       tagline: String(b.tagline || '').slice(0, 120),
       mainService: String(b.mainService || '').slice(0, 80),
@@ -452,11 +450,13 @@
         if (JSON.stringify(data).length > PREVIEW_MAX) {
           throw { friendly: 'A prévia ficou grande demais. Reduza as fotos dos produtos ou use uma logo menor no kit.' };
         }
-        return api.createPreview(data, l.previewId || null);
+        var meta = { niche: slugOk(l.niche) ? l.niche : '', formatReason: String(l.formatReason || '').slice(0, 300) };
+        return api.createPreview(data, l.id, meta, l.previewId || null);
       }).then(function (pid) {
         toast('Site modelo gerado');
         plists[l.id] = null;
-        if (win) { win.opener = null; win.location.href = previewUrl(pid); }
+        // a aba nasceu em about:blank: só um endereço absoluto funciona nela
+        if (win) { win.opener = null; win.location.href = absUrl(pid); }
         mounts.forEach(function (m) { if (m.leadId === l.id) loadPreviews(l.id, true).then(function () { renderPanel(m, true); }); });
       }).catch(function (err) {
         if (win) win.close();
@@ -474,7 +474,7 @@
   }
 
   // ---------- Editor da prévia ----------
-  var pvDrawer = $('#previewDrawer'), pvForm = $('#previewForm'), pvCurrent = null;
+  var pvDrawer = $('#previewDrawer'), pvForm = $('#previewForm'), pvCurrent = null, pvLeadId = null;
 
   function defaultsFor(fmt) {
     var base = (DEFS._base && DEFS._base.defaults && DEFS._base.defaults[fmt]) || {};
@@ -492,11 +492,12 @@
     api.getPreview(l.previewId).then(function (p) {
       if (!p) { toast('Prévia não encontrada.', true); return; }
       pvCurrent = p;
+      pvLeadId = l.id; // o lead vem de quem abriu o editor; a prévia pública não sabe de qual lead é
       pvForm.reset();
       $('#pvMsg').textContent = '';
       $('#pvTitle').textContent = 'Editar prévia · ' + (p.companyName || '');
       pvForm.format.value = p.format;
-      pvForm.formatReason.value = p.formatReason || '';
+      pvForm.formatReason.value = l.formatReason || '';
       pvForm.companyName.value = p.companyName || '';
       pvForm.tagline.value = p.tagline || '';
       pvForm.mainService.value = p.mainService || '';
@@ -541,7 +542,7 @@
       if (e.target.closest('#pvFromKit')) {
         e.preventDefault();
         if (!pvCurrent) return;
-        ensureKit(pvCurrent.leadId).then(function (k) {
+        ensureKit(pvLeadId).then(function (k) {
           pvCurrent._kit = k.data || {};
           $('#pvKitInfo').textContent = 'Logo e produtos do kit serão copiados ao salvar.';
         });
@@ -565,7 +566,7 @@
       if (ben.length) texts.benefits = ben;
       var fmt = pvForm.format.value;
       var data = {
-        format: fmt, formatReason: pvForm.formatReason.value.trim().slice(0, 300), companyName: name.slice(0, 120),
+        format: fmt, companyName: name.slice(0, 120),
         tagline: pvForm.tagline.value.trim().slice(0, 120), mainService: pvForm.mainService.value.trim().slice(0, 80),
         services: services, texts: texts,
         primaryColor: pc || api.del(), secondaryColor: sc || api.del()
@@ -584,8 +585,12 @@
       if (JSON.stringify(probe).length > PREVIEW_MAX) { msg.textContent = 'A prévia ficou grande demais. Reduza as fotos dos produtos ou a logo no kit.'; return; }
       var btn = $('#pvSave');
       btn.disabled = true;
-      var leadId = pvCurrent.leadId;
-      api.updatePreview(pvCurrent.id, data).then(function () {
+      var leadId = pvLeadId;
+      var reason = pvForm.formatReason.value.trim().slice(0, 300);
+      var lnow = lead(leadId);
+      // o motivo do formato fica no lead (privado), nunca na prévia pública
+      var saveReason = lnow && (lnow.formatReason || '') !== reason ? api.updateLead(leadId, { formatReason: reason }) : Promise.resolve();
+      api.updatePreview(pvCurrent.id, data).then(function () { return saveReason; }).then(function () {
         toast('Prévia salva');
         A.closeDrawer(pvDrawer);
         plists[leadId] = null;

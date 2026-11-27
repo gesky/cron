@@ -18,12 +18,19 @@ Firestore Database > aba **Regras** > apague o conteúdo e cole todo o arquivo `
 
 O que elas fazem:
 - **projects**: qualquer visitante lê só os publicados; só o admin cria, edita e exclui.
-- **leads**: qualquer visitante pode enviar (com consentimento LGPD e campos validados); só o admin lê, edita e exclui.
-- **leads/{id}/interacoes**: histórico de cada lead; só o admin lê, cria e apaga (o painel apaga o histórico junto com o lead); ninguém edita.
-- **leads/{id}/kit/marca**: logo e produtos do lead; só o admin lê e grava.
-- **previews**: sites modelo; qualquer pessoa abre só uma prévia ativa pelo id (nunca lista); só o admin cria, edita e apaga.
-- **rodadas**: rodadas de prospecção; só o admin lê, cria e edita; ninguém apaga (arquiva).
-- **admins**: lista de quem pode entrar no painel. Os próprios admins adicionam e removem pela aba Usuários; ninguém remove o próprio acesso.
+- **leads**: qualquer visitante pode enviar (com consentimento LGPD e campos validados); só o admin lê, edita e exclui. O CronUS lê, cria leads de prospecção (`origin: 'cronus'`) e edita só esses, dentro de uma lista fechada de campos.
+- **leads/{id}/interacoes**: histórico de cada lead; admin e CronUS leem e criam; só o admin apaga (junto com o lead); ninguém edita.
+- **leads/{id}/kit/marca**: logo e produtos do lead; admin grava em qualquer lead, o CronUS só nos leads dele.
+- **leads/{id}/previews/{pid}**: índice privado das prévias do lead (nicho e motivo do formato); só admin e CronUS leem e gravam.
+- **previews**: sites modelo; qualquer pessoa abre só uma prévia ativa pelo id (nunca lista); admin e CronUS criam e editam; só o admin apaga. O documento público não guarda lead, nicho nem motivo do formato.
+- **rodadas**: rodadas de prospecção; admin e CronUS leem, criam e editam; só o admin arquiva; ninguém apaga.
+- **admins**: lista de quem pode entrar no painel. Os próprios admins adicionam e removem pela aba Usuários; ninguém remove o próprio acesso nem o do dono.
+- **bots**: contas de automação (CronUS). Só o admin libera e remove. Nunca entram no painel.
+- **config/owner**: UID do dono do sistema. Só o Console do Firebase cria; pelo app ninguém cria, altera ou apaga (nem um admin).
+
+O CronUS nunca apaga nada, nunca aprova mensagem nem candidato, nunca reescreve mensagem já aprovada ou enviada, nunca marca proposta, fechado ou perdido, nunca arquiva nem desarquiva rodada e nunca toca em projetos, admins, bots ou config. Ele só edita leads que ele mesmo criou (`origin` e `createdBy` = `cronus`). Detalhes em **Acesso do CronUS**, no fim deste arquivo.
+
+**Limite de 1000 expressões.** O Firestore avalia no máximo 1000 expressões por gravação; passou disso, recusa. Por isso as regras conferem cada lista inteira numa expressão só (`join` com o separador `¶` e uma regex) e os campos de texto do lead juntos, numa regex só. Consequência prática: o caractere `¶` não pode aparecer em textos de leads, prévias e kits (o painel e o formulário do site trocam por espaço ao gravar). Os testes cobrem os piores casos: lead com todos os campos, 30 fontes e 10 links; prévia com 24 produtos, 12 categorias, 8 serviços e todos os textos; kit com 24 produtos.
 
 ## 3. Criar o seu acesso de admin
 
@@ -197,7 +204,7 @@ Abra `admin.html?demo` no computador (arquivo local ou `localhost`). Funciona me
 
 ### Testar as regras (opcional, no seu computador)
 
-Precisa de Node e Java. Os testes usam o emulador local com um projeto fictício e nunca tocam no banco real:
+Precisa de Node 20 ou mais novo e Java 21 ou mais novo. Os testes usam o emulador local com um projeto fictício (`demo-cron`) e nunca tocam no banco real. O `npm test` sobe o emulador a partir da raiz do repositório (onde fica o `firebase.json`) e roda `crm`, `fase2`, `fase3` e `fase4`, cada um no seu processo:
 
 ```
 cd tests
@@ -246,9 +253,17 @@ O e-mail de redefinição usa o modelo padrão do Firebase. Para trocar o remete
 
 Tira o acesso ao painel na hora (se a pessoa estiver com o painel aberto, ele fecha). A conta de login continua existindo no Firebase; para apagar de vez, use Authentication > Usuários no console. Ninguém consegue remover o próprio acesso, então sempre sobra pelo menos um admin.
 
+### Dono do sistema
+
+O UID gravado em `config/owner` é o dono. Ele aparece com a etiqueta **Dono** e não tem botão Remover; as regras recusam a remoção mesmo fora do painel. Enquanto `config/owner` não existir, ninguém remove admin nenhum e a aba mostra um aviso. Como criar: veja **Acesso do CronUS**, passo 2.
+
+### Assistente (bots)
+
+Abaixo dos admins fica a seção **Assistente**, com as contas de bot (hoje, o CronUS). **Liberar assistente** pede o UID da conta (criada antes em Authentication), um nome e o e-mail. O mesmo UID não pode ser admin e bot ao mesmo tempo. **Remover** corta o acesso do bot na hora; a conta de login continua no Firebase.
+
 ### Testes
 
-`tests/rules/fase2.test.js` cobre rodadas, prospecção nos leads e usuários (`cd tests && npm install && npm test`).
+`tests/rules/fase2.test.js` cobre rodadas, prospecção nos leads, usuários e a proteção do dono (`cd tests && npm install && npm test`).
 
 ## Sites modelo (fase 3)
 
@@ -291,8 +306,221 @@ Escreva `{link}` no texto da mensagem para o endereço da prévia entrar no luga
 
 ### Exclusão completa
 
-Excluir um lead apaga também o histórico, o kit e todas as prévias dele.
+Excluir um lead apaga também o histórico, o kit, o índice privado e todas as prévias dele (as listadas no índice e as antigas que ainda têm `leadId`).
+
+### Índice privado das prévias
+
+Desde a fase 4, a ligação entre lead e prévia fica em `leads/{id}/previews/{pid}` (com o nicho e o motivo do formato), que só admin e CronUS leem. O documento público em `previews/{pid}` não tem `leadId`, `niche` nem `formatReason`. O motivo do formato editado no painel é salvo no lead.
 
 ### Testes
 
-`tests/rules/fase3.test.js` cobre prévias (público e admin), kit e os campos novos do lead.
+`tests/rules/fase3.test.js` cobre prévias (público e admin), o índice privado, kit e os campos novos do lead.
+
+## Acesso do CronUS (fase 4)
+
+O CronUS grava a prospecção direto no Firestore, pela API REST, com uma conta própria de Authentication. Ele não entra no painel e não tem acesso de admin. O que ele pode e não pode está nas regras (`isBot()`) e na lista do passo 2 deste arquivo.
+
+### Passos no console, nesta ordem
+
+1. **Publicar as regras e fazer o merge, um logo depois do outro.** Firestore > Regras > cole o `firestore.rules` desta versão > Publicar; em seguida, merge do PR (o GitHub Pages publica em um ou dois minutos). As regras novas e o painel novo dependem um do outro: o painel antigo grava `leadId`, `niche` e `formatReason` na prévia e os produtos como lista de objetos, que as regras novas recusam; o painel novo grava a prévia sem esses campos e os produtos em listas paralelas, que as regras antigas recusam. No intervalo entre os dois, **Gerar site modelo, editar prévia e salvar kit ficam indisponíveis** (leads, CRM e prospecção continuam funcionando). Faça num momento sem uso e, depois do merge, recarregue o painel com Ctrl+Shift+R (ou Cmd+Shift+R) para não ficar com o JS antigo em cache.
+2. **Criar `config/owner`.** Firestore > Iniciar coleção `config` > ID do documento `owner` > campos `uid` (string, o seu UID, o mesmo do seu documento em `admins`) e `createdAt` (timestamp, agora) > Salvar. Este é o único jeito de criar: pelo app ninguém cria, altera ou apaga esse documento, nem um admin (senão outro admin poderia se gravar como dono antes de você). Confira o UID antes de salvar. Enquanto ele não existir, ninguém remove admin.
+3. **Criar a conta do bot.** Authentication > Usuários > Adicionar usuário, com um e-mail só dele (ex.: um alias do seu e-mail) e uma senha longa gerada pelo gerenciador de senhas. A senha vai direto para o cofre e para a configuração do CronUS. Não cole a senha no chat, no repositório, em PR nem em comentário. Copie o UID.
+4. **Liberar o bot.** No painel, aba Usuários > Assistente > Liberar assistente > cole o UID, nome `CronUS` e o e-mail. (Pelo console também funciona: coleção `bots`, documento = UID, campos `name`, `email`, `role` = `bot`.)
+5. **Conferir.** Entre em `admin.html` com a conta do bot: o painel deve recusar ("sem acesso"). Saia em seguida.
+
+### Login (REST)
+
+A chave web é a `apiKey` de `js/firebase-config.js`. Recomendado: no Google Cloud Console > APIs e serviços > Credenciais, crie uma **chave separada para o bot**, restrita às APIs "Identity Toolkit API" e "Token Service API". A chave do site normalmente fica restrita por referenciador HTTP (`cronwebstudio.com.br/*`) e um servidor sem `Referer` recebe `API_KEY_HTTP_REFERRER_BLOCKED`.
+
+Entrar (o token dura 1 hora):
+
+```bash
+curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$CHAVE_BOT" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$CRONUS_EMAIL\",\"password\":\"$CRONUS_SENHA\",\"returnSecureToken\":true}"
+# resposta: idToken, refreshToken, expiresIn, localId (UID)
+```
+
+Renovar sem senha:
+
+```bash
+curl -s -X POST "https://securetoken.googleapis.com/v1/token?key=$CHAVE_BOT" \
+  -d "grant_type=refresh_token&refresh_token=$REFRESH_TOKEN"
+# resposta: id_token, refresh_token
+```
+
+`$CRONUS_EMAIL` e `$CRONUS_SENHA` vêm do cofre, como variáveis de ambiente. Nunca em arquivo versionado.
+
+**App Check:** hoje não está ativado. Se um dia for imposto no Firestore, o CronUS vai precisar de um token de depuração do App Check (App Check > Apps > Gerenciar tokens de depuração) enviado no cabeçalho `X-Firebase-AppCheck`. Ative só depois de configurar isso.
+
+### Gravações (REST)
+
+Base: `https://firestore.googleapis.com/v1/projects/cron-91280/databases/(default)/documents`. Todas as chamadas levam `Authorization: Bearer $ID_TOKEN`.
+
+Use sempre `:commit`. Ele aceita várias gravações juntas (tudo ou nada) e o `setToServerValue: REQUEST_TIME`, que é o que as regras exigem em `createdAt` e `updatedAt`. IDs novos: 20 caracteres de `A-Z a-z 0-9`, gerados pelo CronUS.
+
+```bash
+curl -s -X POST "$BASE:commit" -H "Authorization: Bearer $ID_TOKEN" \
+  -H "Content-Type: application/json" -d @gravacao.json
+```
+
+**1. Rodada nova**
+
+```json
+{ "writes": [{
+  "update": { "name": "projects/cron-91280/databases/(default)/documents/rodadas/ID_RODADA",
+    "fields": {
+      "niche": { "stringValue": "industria-moveis" },
+      "nicheLabel": { "stringValue": "Indústria de móveis" },
+      "region": { "stringValue": "Norte do Paraná" },
+      "status": { "stringValue": "em_andamento" },
+      "createdBy": { "stringValue": "cronus" } } },
+  "currentDocument": { "exists": false },
+  "updateTransforms": [
+    { "fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME" },
+    { "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" } ]
+}]}
+```
+
+**2. Atualizar o funil da rodada** (o CronUS pode marcar `concluida`, nunca `arquivada`)
+
+```json
+{ "writes": [{
+  "update": { "name": ".../documents/rodadas/ID_RODADA",
+    "fields": { "funnel": { "mapValue": { "fields": {
+      "encontradas": { "integerValue": "40" }, "qualificadas": { "integerValue": "6" } } } },
+      "status": { "stringValue": "concluida" } } },
+  "updateMask": { "fieldPaths": ["funnel", "status"] },
+  "currentDocument": { "exists": true },
+  "updateTransforms": [{ "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" }]
+}]}
+```
+
+**3. Lead novo** (sempre `origin` e `createdBy` = `cronus`, `status` = `novo` ou `mensagem_pronta`, `prospectState` = `pendente`; a mensagem nasce sem aprovação)
+
+```json
+{ "writes": [{
+  "update": { "name": ".../documents/leads/ID_LEAD",
+    "fields": {
+      "origin": { "stringValue": "cronus" },
+      "createdBy": { "stringValue": "cronus" },
+      "status": { "stringValue": "mensagem_pronta" },
+      "prospectState": { "stringValue": "pendente" },
+      "company": { "stringValue": "Nome da empresa" },
+      "niche": { "stringValue": "industria-moveis" },
+      "batchId": { "stringValue": "ID_RODADA" },
+      "whatsapp": { "stringValue": "43999999999" },
+      "sources": { "mapValue": { "fields": { "whatsapp": { "stringValue": "google_maps" } } } },
+      "drafts": { "mapValue": { "fields": { "whatsapp": { "stringValue": "Texto da abordagem" } } } },
+      "draft": { "mapValue": { "fields": {
+        "channel": { "stringValue": "whatsapp" }, "text": { "stringValue": "Texto da abordagem" } } } } } },
+  "currentDocument": { "exists": false },
+  "updateTransforms": [{ "fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME" }]
+}]}
+```
+
+Os valores acima são só o formato. Grave apenas dados encontrados de verdade, com a fonte em `sources`.
+
+**4. Atualizar um lead do CronUS** (só campos da lista do bot; sempre com `updateMask`)
+
+```json
+{ "writes": [{
+  "update": { "name": ".../documents/leads/ID_LEAD",
+    "fields": { "qualification": { "stringValue": "qualificado" },
+      "format": { "stringValue": "catalogo" }, "formatReason": { "stringValue": "Motivo curto" } } },
+  "updateMask": { "fieldPaths": ["qualification", "format", "formatReason"] },
+  "currentDocument": { "exists": true },
+  "updateTransforms": [{ "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" }]
+}]}
+```
+
+**5. Registro no histórico**
+
+```json
+{ "writes": [{
+  "update": { "name": ".../documents/leads/ID_LEAD/interacoes/ID_INTERACAO",
+    "fields": { "type": { "stringValue": "nota" }, "text": { "stringValue": "O que aconteceu" },
+      "channel": { "stringValue": "" }, "from": { "stringValue": "" }, "to": { "stringValue": "" },
+      "createdBy": { "stringValue": "cronus" } } },
+  "currentDocument": { "exists": false },
+  "updateTransforms": [{ "fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME" }]
+}]}
+```
+
+**6. Kit da marca** (documento sempre `marca`; logo e fotos em WebP base64)
+
+Os produtos vão em **quatro listas paralelas do mesmo tamanho** (até 24): o produto `i` é `names[i]`, `descriptions[i]`, `categories[i]` e `images[i]`. Nome obrigatório (até 60 caracteres), descrição até 160, categoria até 40, foto vazia ou `data:image/(webp|png|jpeg);base64,...`, todas as fotos somadas até 720 mil caracteres. Nenhum texto pode ter `¶`. O mesmo formato vale para os produtos da prévia.
+
+```json
+{ "writes": [{
+  "update": { "name": ".../documents/leads/ID_LEAD/kit/marca",
+    "fields": { "logo": { "stringValue": "data:image/webp;base64,..." },
+      "products": { "mapValue": { "fields": {
+        "names": { "arrayValue": { "values": [{ "stringValue": "Mesa Aurora" }, { "stringValue": "Cadeira Lis" }] } },
+        "descriptions": { "arrayValue": { "values": [{ "stringValue": "Madeira maciça" }, { "stringValue": "" }] } },
+        "categories": { "arrayValue": { "values": [{ "stringValue": "Mesas" }, { "stringValue": "Cadeiras" }] } },
+        "images": { "arrayValue": { "values": [{ "stringValue": "data:image/webp;base64,..." }, { "stringValue": "" }] } } } } },
+      "categories": { "arrayValue": { "values": [{ "stringValue": "Mesas" }, { "stringValue": "Cadeiras" }] } },
+      "updatedBy": { "stringValue": "cronus" } } },
+  "updateTransforms": [{ "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" }]
+}]}
+```
+
+**7. Prévia, índice privado e ligação no lead** (num commit só; nada de `leadId`, `niche` ou `formatReason` no documento público)
+
+```json
+{ "writes": [
+  { "update": { "name": ".../documents/previews/ID_PREVIA",
+      "fields": { "template": { "stringValue": "_base" }, "format": { "stringValue": "catalogo" },
+        "companyName": { "stringValue": "Nome da empresa" }, "tagline": { "stringValue": "" },
+        "mainService": { "stringValue": "Serviço principal" },
+        "services": { "arrayValue": { "values": [{ "stringValue": "Serviço" }] } },
+        "primaryColor": { "stringValue": "#112233" }, "secondaryColor": { "stringValue": "#ffffff" },
+        "logo": { "stringValue": "" }, "categories": { "arrayValue": {} },
+        "products": { "mapValue": { "fields": { "names": { "arrayValue": {} }, "descriptions": { "arrayValue": {} },
+          "categories": { "arrayValue": {} }, "images": { "arrayValue": {} } } } },
+        "texts": { "mapValue": {} }, "active": { "booleanValue": false },
+        "createdBy": { "stringValue": "cronus" } } },
+    "currentDocument": { "exists": false },
+    "updateTransforms": [
+      { "fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME" },
+      { "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" } ] },
+  { "update": { "name": ".../documents/leads/ID_LEAD/previews/ID_PREVIA",
+      "fields": { "niche": { "stringValue": "industria-moveis" }, "formatReason": { "stringValue": "Motivo curto" } } },
+    "currentDocument": { "exists": false },
+    "updateTransforms": [{ "fieldPath": "createdAt", "setToServerValue": "REQUEST_TIME" }] },
+  { "update": { "name": ".../documents/leads/ID_LEAD", "fields": { "previewId": { "stringValue": "ID_PREVIA" } } },
+    "updateMask": { "fieldPaths": ["previewId"] },
+    "currentDocument": { "exists": true },
+    "updateTransforms": [{ "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" }] }
+]}
+```
+
+A prévia do CronUS pode nascer inativa (`active: false`); quem ativa e aprova é você, no painel.
+
+### Checar duplicado antes de criar
+
+```bash
+curl -s -X POST "$BASE:runQuery" -H "Authorization: Bearer $ID_TOKEN" -H "Content-Type: application/json" -d '{
+  "structuredQuery": {
+    "from": [{ "collectionId": "leads" }],
+    "where": { "fieldFilter": { "field": { "fieldPath": "whatsapp" }, "op": "EQUAL", "value": { "stringValue": "43999999999" } } },
+    "limit": 1 } }'
+```
+
+Repita com `instagram`, `cnpj` ou `googleMapsUrl` quando houver. Resposta com `document` = já existe: atualize (se for lead do CronUS) ou pule.
+
+### Erros comuns
+
+- `PERMISSION_DENIED`: campo fora da lista do bot, `status` ou `prospectState` não permitido, lead que não é do CronUS, mensagem já aprovada ou enviada, `createdAt`/`updatedAt` sem `REQUEST_TIME`, falta do `updateMask` (sem ele o REST substitui o documento inteiro e as regras recusam), um `¶` em algum texto, número no lugar de texto, ou produtos fora do formato de listas paralelas.
+- `UNAUTHENTICATED`: token vencido; renove com o `refreshToken`.
+
+### Prévias antigas
+
+As prévias criadas antes desta versão (se houver) ainda têm `leadId`, `niche` e `formatReason` no documento público e os produtos como lista de objetos. O painel remove os três campos sempre que a prévia é salva, ativada ou desativada, e continua achando as antigas pelo `leadId` para listar e para a exclusão completa. A página `modelo/` abre os dois formatos de produto. No update, as regras conferem só os campos alterados, então desativar uma prévia antiga funciona sem regravar os produtos; salvar pelo editor regrava no formato novo. Para limpar de vez: no painel, abra cada prévia ativa e salve (ou gere de novo). Não há script de migração em massa, de propósito.
+
+### Outros ajustes desta fase
+
+- `.nojekyll` na raiz: o GitHub Pages serve os arquivos como estão.
+- `robots.txt` com `Disallow: /tests/`.
+- Os testes de regras rodam só no emulador, nunca no Firestore real: `cd tests && npm install && npm test` (precisa de Node 20 ou mais novo e Java 21 ou mais novo; veja `tests/README.md`). Os quatro arquivos rodam cada um no seu processo. O GitHub Actions roda a mesma suíte a cada push que mexe nas regras ou nos testes (`.github/workflows/regras.yml`). `tests/rules/fase4.test.js` cobre o acesso do CronUS, o dono, a privacidade das prévias e os documentos no limite do orçamento de expressões.

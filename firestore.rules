@@ -7,13 +7,36 @@ rules_version = '2';
 // - leads: visitante só CRIA pelo formulário (campos validados + consentimento LGPD);
 //          o admin lê, cadastra leads manuais e edita os campos de CRM (nunca consentimento,
 //          UTM, data de criação ou de onde o lead clicou no site)
-// - leads/{id}/interacoes: histórico do lead; admin lê, cria e apaga (ao excluir o lead); ninguém edita
-// - leads/{id}/kit/marca: logo e produtos do lead (pesados, fora do documento do lead); só admin
-// - previews: sites modelo; visitante lê só a prévia ativa pelo id (nunca lista); admin gerencia
-// - rodadas: rodadas de prospecção; admin lê, cria e edita; nunca apaga (arquiva)
+// - leads/{id}/interacoes: histórico do lead; admin e CronUS leem e criam; só o admin apaga
+//          (ao excluir o lead); ninguém edita
+// - leads/{id}/kit/marca: logo e produtos do lead (fora do documento do lead); admin em
+//          qualquer lead, CronUS só nos leads dele
+// - leads/{id}/previews/{pid}: índice privado das prévias do lead (nicho e motivo do formato)
+// - previews: sites modelo; visitante lê só a prévia ativa pelo id (nunca lista); admin e
+//          CronUS criam e editam; só o admin apaga
+// - rodadas: rodadas de prospecção; admin e CronUS leem, criam e editam; só o admin arquiva
+//          ou desarquiva; ninguém apaga
 // - admins: cada documento com o UID libera o painel; admins gerenciam outros admins
-//           pelo painel (ninguém remove o próprio acesso)
+//           pelo painel (ninguém remove o próprio acesso nem o do dono)
+// - bots: cada documento com o UID libera o CronUS a gravar prospecção (nunca entra no painel)
+// - config/owner: UID do dono do sistema; criado só pelo Console do Firebase, nunca pelo app
 // - qualquer outra coleção: bloqueada
+//
+// O CronUS (bot) lê leads, histórico, kit, prévias e rodadas; cria e atualiza só o que é
+// dele (leads com origin e createdBy 'cronus'); nunca apaga, nunca aprova nem reescreve
+// mensagem aprovada ou enviada, nunca fecha ou perde lead, nunca arquiva nem desarquiva rodada
+// e nunca toca em projetos, admins, bots ou config.
+//
+// Orçamento: o Firestore avalia no máximo 1000 expressões por gravação. Por isso:
+// - a validação pesada (validCrmFields, validPreview, validKit) aparece uma vez só em cada
+//   allow, depois do teste de papel;
+// - cada lista é conferida numa expressão só (join com o separador ¶ e uma regex), sem
+//   conferir posição por posição; os produtos ficam em quatro listas paralelas;
+// - os campos de texto do lead vão juntos numa regex só;
+// - no update de prévia, só os campos alterados são conferidos.
+// O caractere ¶ não pode aparecer nos textos (o painel e o formulário trocam por espaço).
+// Os testes (tests/rules) cobrem os documentos no limite: lead com todos os campos, prévia
+// com 24 produtos e kit cheio.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -23,19 +46,66 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // CronUS: conta dedicada com documento em bots/{uid}
+    function isBot() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/bots/$(request.auth.uid));
+    }
+
+    function ownerPath() { return /databases/$(database)/documents/config/owner; }
+
+    // Campos acrescentados ou alterados num update (os removidos ficam de fora)
+    function changed(n, o) { let df = n.diff(o); return df.addedKeys().union(df.changedKeys()); }
+
     // ---------------- Admins ----------------
     match /admins/{uid} {
       // cada pessoa lê o próprio documento (o painel confere o acesso); admin lê todos
       allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
       allow list: if isAdmin();
-      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validAdmin(request.resource.data);
+      // a mesma conta nunca é admin e bot ao mesmo tempo
+      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validAdmin(request.resource.data)
+        && !exists(/databases/$(database)/documents/bots/$(uid));
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'updatedAt'])
         && (!('name' in request.resource.data) || str(request.resource.data.name, 80))
         && (!('email' in request.resource.data) || mail(request.resource.data.email))
         && request.resource.data.updatedAt == request.time;
-      // remover o acesso de outra pessoa; o próprio, nunca (sempre sobra pelo menos um admin)
-      allow delete: if isAdmin() && request.auth.uid != uid;
+      // remover o acesso de outra pessoa; o próprio, nunca; o do dono, nunca.
+      // Sem config/owner criado, ninguém remove admin pelo app (proposital).
+      allow delete: if isAdmin() && request.auth.uid != uid
+        && exists(ownerPath())
+        && get(ownerPath()).data.uid != uid;
+    }
+
+    // ---------------- Bots (CronUS) ----------------
+    match /bots/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isAdmin() && uid.matches('^[A-Za-z0-9]{20,40}$') && validBot(request.resource.data)
+        && !exists(/databases/$(database)/documents/admins/$(uid));
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email', 'updatedAt'])
+        && (!('name' in request.resource.data) || str(request.resource.data.name, 80))
+        && (!('email' in request.resource.data) || mail(request.resource.data.email))
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    function validBot(d) {
+      return d.keys().hasOnly(['name', 'email', 'role', 'createdAt', 'createdBy'])
+        && str(d.name, 80) && d.name.size() >= 2
+        && mail(d.email)
+        && d.role == 'bot'
+        && d.createdAt == request.time
+        && d.createdBy == request.auth.uid;
+    }
+
+    // ---------------- Dono do sistema ----------------
+    // Documento único config/owner { uid, createdAt }. Criado só no Console do Firebase
+    // (que não passa pelas regras). Pelo app ninguém cria, altera ou apaga.
+    match /config/{docId} {
+      allow get, list: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     function validAdmin(d) {
@@ -49,17 +119,20 @@ service cloud.firestore {
 
     // ---------------- Sites modelo (prévias) ----------------
     match /previews/{id} {
-      // público abre só a prévia ativa, pelo id aleatório; nunca lista
-      allow get: if resource.data.active == true || isAdmin();
-      allow list: if isAdmin();
-      allow create: if isAdmin()
-        && validPreview(request.resource.data)
-        && request.resource.data.createdBy == 'admin'
+      // público abre só a prévia ativa, pelo id aleatório; nunca lista.
+      // A condição barata vem primeiro: o visitante não paga as consultas de papel.
+      allow get: if resource.data.active == true || isAdmin() || isBot();
+      allow list: if isAdmin() || isBot();
+      allow create: if ((isAdmin() && request.resource.data.createdBy == 'admin')
+          || (isBot() && request.resource.data.createdBy == 'cronus'))
+        && request.resource.data.keys().hasAll(['template', 'format', 'companyName', 'active',
+                                                'createdBy', 'createdAt', 'updatedAt'])
+        && validPreview(request.resource.data, request.resource.data.keys())
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time;
-      allow update: if isAdmin()
-        && validPreview(request.resource.data)
-        && request.resource.data.leadId == resource.data.leadId
+      // no update, só os campos alterados são conferidos (desativar uma prévia é barato)
+      allow update: if (isAdmin() || isBot())
+        && validPreview(request.resource.data, changed(request.resource.data, resource.data))
         && request.resource.data.createdBy == resource.data.createdBy
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time;
@@ -74,37 +147,30 @@ service cloud.firestore {
     }
     function color(v) { return v is string && v.matches('^(#[0-9a-fA-F]{6})?$'); }
 
-    // Listas de textos curtos: as regras não têm laço, cada posição é conferida
-    function strAt(l, i, max) { return l.size() <= i || str(l[i], max); }
-    function list6(l, max) {
-      return l is list && l.size() <= 6
-        && strAt(l, 0, max) && strAt(l, 1, max) && strAt(l, 2, max)
-        && strAt(l, 3, max) && strAt(l, 4, max) && strAt(l, 5, max);
-    }
-    function strs4(l, o, max) {
-      return strAt(l, o, max) && strAt(l, o + 1, max) && strAt(l, o + 2, max) && strAt(l, o + 3, max);
-    }
-    function list8(l, max) { return l is list && l.size() <= 8 && strs4(l, 0, max) && strs4(l, 4, max); }
-    function list12(l, max) {
-      return l is list && l.size() <= 12 && strs4(l, 0, max) && strs4(l, 4, max) && strs4(l, 8, max);
-    }
+    // Listas de textos: a lista inteira é conferida sem laço. join('¶') junta os itens com o
+    // separador ¶ e a regex limita cada item; join('') sem ¶ garante que nenhum item traz o
+    // separador (senão um item valeria por dois).
+    // Exemplo de re para itens de até 40 caracteres: '^[^¶]{0,40}(¶[^¶]{0,40})*$'
+    function noSep(l) { return l.join('').matches('^[^¶]*$'); }
+    function textList(l, n, re) { return l is list && l.size() <= n && noSep(l) && l.join('¶').matches(re); }
 
-    // Produtos do catálogo: até 24, cada um conferido na sua posição
-    function validProduct(m) {
-      return m is map
-        && m.keys().hasOnly(['name', 'description', 'category', 'image'])
-        && str(m.name, 60) && m.name.size() >= 1
-        && (!('description' in m) || str(m.description, 160))
-        && (!('category' in m) || str(m.category, 40))
-        && (!('image' in m) || img(m.image, 30000));
-    }
-    function prodAt(l, i) { return l.size() <= i || validProduct(l[i]); }
-    function products8(l, o) {
-      return prodAt(l, o) && prodAt(l, o + 1) && prodAt(l, o + 2) && prodAt(l, o + 3)
-        && prodAt(l, o + 4) && prodAt(l, o + 5) && prodAt(l, o + 6) && prodAt(l, o + 7);
-    }
-    function validProducts(l) {
-      return l is list && l.size() <= 24 && products8(l, 0) && products8(l, 8) && products8(l, 16);
+    // Produtos do catálogo (prévia e kit): até 24, em quatro listas paralelas do mesmo tamanho.
+    // O produto i é names[i], descriptions[i], categories[i] e images[i] (modelo/produtos.js).
+    // Imagem: data URL de webp, png ou jpeg em base64 (ou vazio); todas juntas até 720 mil
+    // caracteres, para o documento caber no limite de 1 MB com a logo.
+    function validProducts(p) {
+      return p is map
+        && p.keys().hasOnly(['names', 'descriptions', 'categories', 'images'])
+        && p.names is list && p.names.size() <= 24
+        && p.descriptions is list && p.descriptions.size() == p.names.size()
+        && p.categories is list && p.categories.size() == p.names.size()
+        && p.images is list && p.images.size() == p.names.size()
+        && (p.names.join('') + p.descriptions.join('') + p.categories.join('') + p.images.join('')).matches('^[^¶]*$')
+        && (p.names.size() == 0 || p.names.join('¶').matches('^[^¶]{1,60}(¶[^¶]{1,60})*$'))
+        && p.descriptions.join('¶').matches('^[^¶]{0,160}(¶[^¶]{0,160})*$')
+        && p.categories.join('¶').matches('^[^¶]{0,40}(¶[^¶]{0,40})*$')
+        && p.images.join('¶').size() <= 720000
+        && p.images.join('¶').matches('^(data:image/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+)?(¶(data:image/(webp|png|jpeg);base64,[A-Za-z0-9+/=]+)?)*$');
     }
 
     function validTexts(t) {
@@ -112,71 +178,81 @@ service cloud.firestore {
         && t.keys().hasOnly(['headline', 'subheadline', 'about', 'ctaPrimary', 'ctaSecondary',
                              'contactTitle', 'contactText', 'catalogTitle', 'catalogText',
                              'diferenciais', 'benefits'])
-        && (!('headline' in t) || str(t.headline, 120))
-        && (!('subheadline' in t) || str(t.subheadline, 240))
-        && (!('about' in t) || str(t.about, 900))
-        && (!('ctaPrimary' in t) || str(t.ctaPrimary, 40))
-        && (!('ctaSecondary' in t) || str(t.ctaSecondary, 40))
-        && (!('contactTitle' in t) || str(t.contactTitle, 80))
-        && (!('contactText' in t) || str(t.contactText, 240))
-        && (!('catalogTitle' in t) || str(t.catalogTitle, 80))
-        && (!('catalogText' in t) || str(t.catalogText, 240))
-        && (!('diferenciais' in t) || list6(t.diferenciais, 120))
-        && (!('benefits' in t) || list6(t.benefits, 120));
+        && (!('headline' in t) || t.headline.matches('^[\\s\\S]{0,120}$'))
+        && (!('subheadline' in t) || t.subheadline.matches('^[\\s\\S]{0,240}$'))
+        && (!('about' in t) || t.about.matches('^[\\s\\S]{0,900}$'))
+        && (!('ctaPrimary' in t) || t.ctaPrimary.matches('^.{0,40}$'))
+        && (!('ctaSecondary' in t) || t.ctaSecondary.matches('^.{0,40}$'))
+        && (!('contactTitle' in t) || t.contactTitle.matches('^.{0,80}$'))
+        && (!('contactText' in t) || t.contactText.matches('^[\\s\\S]{0,240}$'))
+        && (!('catalogTitle' in t) || t.catalogTitle.matches('^.{0,80}$'))
+        && (!('catalogText' in t) || t.catalogText.matches('^[\\s\\S]{0,240}$'))
+        && (!('diferenciais' in t) || textList(t.diferenciais, 6, '^[^¶]{0,120}(¶[^¶]{0,120})*$'))
+        && (!('benefits' in t) || textList(t.benefits, 6, '^[^¶]{0,120}(¶[^¶]{0,120})*$'));
     }
 
-    // Prévia é pública por link: nada interno do lead (contatos, cidade, notas, motivos)
-    function validPreview(d) {
-      return d.keys().hasOnly(['leadId', 'niche', 'template', 'format', 'formatReason',
+    // Prévia é pública por link: nada interno do lead (contatos, cidade, notas, motivos,
+    // id do lead ou nicho). A ligação com o lead fica no índice privado leads/{id}/previews.
+    // k = campos a conferir: todos na criação, só os alterados no update.
+    function validPreview(d, k) {
+      return d.keys().hasOnly(['template', 'format',
                                'companyName', 'tagline', 'mainService', 'services',
                                'primaryColor', 'secondaryColor', 'logo', 'products', 'categories',
                                'texts', 'active', 'createdBy', 'createdAt', 'updatedAt'])
-        && d.leadId is string && d.leadId.matches('^[A-Za-z0-9]{1,40}$')
-        && (!('niche' in d) || (d.niche is string && d.niche.matches('^([a-z0-9-]{2,60})?$')))
-        && d.template is string && d.template.matches('^[a-z0-9_-]{2,60}$')
-        && d.format in ['landing', 'institucional', 'catalogo']
-        && (!('formatReason' in d) || str(d.formatReason, 300))
-        && str(d.companyName, 120) && d.companyName.size() >= 2
-        && (!('tagline' in d) || str(d.tagline, 120))
-        && (!('mainService' in d) || str(d.mainService, 80))
-        && (!('services' in d) || list8(d.services, 60))
-        && (!('primaryColor' in d) || color(d.primaryColor))
-        && (!('secondaryColor' in d) || color(d.secondaryColor))
-        && (!('logo' in d) || img(d.logo, 200000))
-        && (!('products' in d) || validProducts(d.products))
-        && (!('categories' in d) || list12(d.categories, 40))
-        && (!('texts' in d) || validTexts(d.texts))
-        && d.active is bool
-        && d.createdBy in ['admin', 'cronus'];
+        && (!('template' in k) || d.template.matches('^[a-z0-9_-]{2,60}$'))
+        && (!('format' in k) || d.format in ['landing', 'institucional', 'catalogo'])
+        && (!('companyName' in k) || d.companyName.matches('^.{2,120}$'))
+        && (!('tagline' in k) || d.tagline.matches('^.{0,120}$'))
+        && (!('mainService' in k) || d.mainService.matches('^.{0,80}$'))
+        && (!('services' in k) || textList(d.services, 8, '^[^¶]{0,60}(¶[^¶]{0,60})*$'))
+        && (!('primaryColor' in k) || color(d.primaryColor))
+        && (!('secondaryColor' in k) || color(d.secondaryColor))
+        && (!('logo' in k) || img(d.logo, 200000))
+        && (!('products' in k) || validProducts(d.products))
+        && (!('categories' in k) || textList(d.categories, 12, '^[^¶]{0,40}(¶[^¶]{0,40})*$'))
+        && (!('texts' in k) || validTexts(d.texts))
+        && (!('active' in k) || d.active is bool)
+        && (!('createdBy' in k) || d.createdBy in ['admin', 'cronus']);
     }
 
     function validKit(d) {
       return d.keys().hasOnly(['logo', 'products', 'categories', 'updatedAt', 'updatedBy'])
         && (!('logo' in d) || img(d.logo, 200000))
         && (!('products' in d) || validProducts(d.products))
-        && (!('categories' in d) || list12(d.categories, 40))
+        && (!('categories' in d) || textList(d.categories, 12, '^[^¶]{0,40}(¶[^¶]{0,40})*$'))
         && d.updatedAt == request.time
-        && d.updatedBy == 'admin';
+        && d.updatedBy in ['admin', 'cronus'];
+    }
+
+    // Índice privado de prévias do lead: id igual ao da prévia pública
+    function validPreviewIndex(d) {
+      return d.keys().hasOnly(['niche', 'formatReason', 'createdAt'])
+        && (!('niche' in d) || (d.niche is string && d.niche.matches('^([a-z0-9-]{2,60})?$')))
+        && (!('formatReason' in d) || d.formatReason.matches('^[\\s\\S]{0,300}$'))
+        && d.createdAt is timestamp;
     }
 
     function validBrand(m) {
       return m is map
         && m.keys().hasOnly(['primaryColor', 'secondaryColor', 'tagline', 'mainService', 'services'])
-        && (!('primaryColor' in m) || color(m.primaryColor))
-        && (!('secondaryColor' in m) || color(m.secondaryColor))
-        && (!('tagline' in m) || str(m.tagline, 120))
-        && (!('mainService' in m) || str(m.mainService, 80))
-        && (!('services' in m) || list8(m.services, 60));
+        && color(m.get('primaryColor', ''))
+        && color(m.get('secondaryColor', ''))
+        && m.get('tagline', '').matches('^.{0,120}$')
+        && m.get('mainService', '').matches('^.{0,80}$')
+        && textList(m.get('services', []), 8, '^[^¶]{0,60}(¶[^¶]{0,60})*$');
     }
 
     // ---------------- Rodadas de prospecção ----------------
     match /rodadas/{id} {
-      allow get, list: if isAdmin();
-      allow create: if isAdmin()
-        && request.resource.data.createdBy == 'admin'
+      allow get, list: if isAdmin() || isBot();
+      allow create: if ((isAdmin() && request.resource.data.createdBy == 'admin')
+          || (isBot() && request.resource.data.createdBy == 'cronus'))
         && request.resource.data.createdAt == request.time
         && validRodada(request.resource.data);
-      allow update: if isAdmin()
+      // o bot atualiza tudo menos arquivar ou desarquivar (decisão do admin)
+      allow update: if (isAdmin() || (isBot()
+          && resource.data.status != 'arquivada'
+          && request.resource.data.status != 'arquivada'))
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['niche', 'nicheLabel', 'region', 'criteria', 'funnel', 'status', 'notes', 'updatedAt'])
         && validRodada(request.resource.data);
@@ -244,27 +320,52 @@ service cloud.firestore {
 
     // ---------------- Leads ----------------
     match /leads/{id} {
-      // Formulário do site (exatamente como antes) ou cadastro manual pelo admin
-      allow create: if validLead(request.resource.data)
-        || (isAdmin() && validCrmLead(request.resource.data));
-      allow get, list: if isAdmin();
-      // Admin edita só campos de CRM; o documento resultante precisa continuar válido
-      allow update: if isAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(crmEditable())
+      // Cadastro manual pelo admin ou lead do CronUS (validCrmFields uma vez só, depois do
+      // papel); por último, o formulário do site (exatamente como antes).
+      allow create: if (((isBot() && botLeadShape(request.resource.data))
+            || (isAdmin() && crmLeadShape(request.resource.data)))
+          && validCrmFields(request.resource.data))
+        || validLead(request.resource.data);
+      allow get, list: if isAdmin() || isBot();
+      // Admin edita só campos de CRM; o documento resultante precisa continuar válido.
+      // Bot edita só leads que ele criou (origin e createdBy 'cronus') e só os campos dele.
+      allow update: if ((isBot() && isBotLead(resource.data)
+            && botUpdate(request.resource.data, resource.data))
+          || (isAdmin()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(crmEditable())))
         && validCrmFields(request.resource.data);
       allow delete: if isAdmin();
 
       // Kit da marca (logo e produtos): documento único 'marca'. Apagado só na exclusão completa.
+      // O bot grava só no kit de lead de prospecção.
       match /kit/{docId} {
-        allow get, list: if isAdmin();
-        allow create, update: if isAdmin() && docId == 'marca' && validKit(request.resource.data);
+        allow get, list: if isAdmin() || isBot();
+        allow create, update: if docId == 'marca'
+          && ((isAdmin() && request.resource.data.updatedBy == 'admin')
+            || (isBot() && request.resource.data.updatedBy == 'cronus'
+              && isBotLead(getAfter(/databases/$(database)/documents/leads/$(id)).data)))
+          && validKit(request.resource.data);
+        allow delete: if isAdmin();
+      }
+
+      // Índice privado das prévias do lead (a prévia pública não sabe de qual lead é)
+      match /previews/{pid} {
+        allow get, list: if isAdmin() || isBot();
+        allow create: if (isAdmin() || isBot())
+          && validPreviewIndex(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        allow update: if (isAdmin() || isBot())
+          && validPreviewIndex(request.resource.data)
+          && request.resource.data.createdAt == resource.data.createdAt;
         allow delete: if isAdmin();
       }
 
       // Histórico: ninguém edita. O admin apaga só junto com o lead (exclusão completa, LGPD).
       match /interacoes/{iid} {
-        allow get, list: if isAdmin();
-        allow create: if isAdmin() && validInteraction(request.resource.data);
+        allow get, list: if isAdmin() || isBot();
+        allow create: if ((isAdmin() && request.resource.data.createdBy == 'admin')
+            || (isBot() && request.resource.data.createdBy == 'cronus'))
+          && validInteraction(request.resource.data);
         allow delete: if isAdmin();
         allow update: if false;
       }
@@ -304,101 +405,131 @@ service cloud.firestore {
     // Campos que o admin pode alterar num lead existente.
     // Fora da lista (imutáveis): createdAt, createdBy, consent, consentText, consentAt,
     // utm, source, sourceLabel, project, page, referrer, message.
+    // (a lista do bot mais os campos que só o admin mexe; uma lista só, para não pesar)
     function crmEditable() {
-      return [
-        'status', 'notes', 'updatedAt', 'stageAt',
-        'name', 'company', 'whatsapp', 'email', 'need',
-        'origin', 'role', 'instagram', 'niche', 'city', 'state',
-        'currentSite', 'siteStatus', 'siteScore', 'siteReason',
-        'googleRating', 'googleReviews', 'cnpj', 'companyYears',
-        'phone', 'linkedin', 'companyLinkedin', 'companyEmail', 'cnpjEmail', 'cnpjPhone',
-        'legalName', 'googleMapsUrl', 'facebook', 'address', 'otherLinks', 'sources',
-        'channel', 'fitReason', 'draft', 'previewId', 'batchId', 'owner',
-        'nextStep', 'meetingAt', 'lostReason',
-        'prospectState', 'drafts', 'discardReason',
-        'qualification', 'disqualifyReason', 'format', 'formatReason', 'brand'
-      ];
+      return botEditable().concat(['notes', 'origin', 'owner', 'lostReason', 'discardReason']);
     }
 
-    // Etapas do funil. 'contato' fica aceito para leads antigos (o painel mostra como "Em conversa").
-    function stages() {
-      return ['novo', 'mensagem_pronta', 'abordado', 'respondeu', 'em_conversa',
-              'reuniao', 'proposta', 'fechado', 'perdido', 'contato'];
-    }
 
-    function url(v) { return str(v, 300) && (v == '' || v.matches('^https?://.+')); }
-    function mail(v) { return str(v, 160) && (v == '' || v.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')); }
+    // http/https de até 300 caracteres, ou vazio
+    function url(v) { return v.matches('^(https?://.{1,292})?$'); }
+    // e-mail (até 64 caracteres antes do @), ou vazio
+    function mail(v) { return v.matches('^([^@\\s]{1,64}@[^@\\s]{1,100}\\.[^@\\s]{1,24})?$'); }
     function tsOrNull(v) { return v == null || v is timestamp; }
 
-    // Valida só os campos de CRM presentes (todos opcionais, exceto status).
+    // Valida os campos de CRM (todos opcionais, exceto status).
+    // Os campos de texto vão juntos, na ordem abaixo, num texto só separado por ¶, conferido por
+    // uma regex só: o + entre textos recusa número, booleano ou null (tipo continua sendo texto)
+    // e cada trecho tem a sua regra. Campo ausente entra com o padrão, que passa na própria regra.
+    // Um ¶ dentro de um campo cria um trecho a mais e a regex recusa (o painel tira o ¶ ao gravar).
+    //   status            (novo|mensagem_pronta|abordado|respondeu|em_conversa|reuniao|proposta|fechado|perdido|contato)
+    //   notes             [^¶]{0,1000}[^¶]{0,1000}[^¶]{0,1000}[^¶]{0,1000}[^¶]{0,1000}
+    //   name              [^¶\n]{0,120}
+    //   company           [^¶\n]{0,120}
+    //   whatsapp          ([0-9]{10,13})?
+    //   email             ([^@\s¶]{1,64}@[^@\s¶]{1,80}\.[^@\s¶]{1,13})?
+    //   need              (|institucional|sistema|nao-sei)
+    //   origin            (site|cronus|indicacao|manual)
+    //   role              [^¶\n]{0,80}
+    //   instagram         [A-Za-z0-9._]{0,30}
+    //   niche             [a-z0-9-]{0,60}
+    //   city              [^¶\n]{0,80}
+    //   state             ([A-Z]{2})?
+    //   currentSite       (https?://[^¶\n]{1,292})?
+    //   siteStatus        (|sem_site|site_fraco|ok)
+    //   siteReason        [^¶]{0,300}
+    //   cnpj              ([0-9]{14})?
+    //   phone             ([0-9]{8,13})?
+    //   linkedin          (https?://[^¶\n]{1,292})?
+    //   companyLinkedin   (https?://[^¶\n]{1,292})?
+    //   companyEmail      ([^@\s¶]{1,64}@[^@\s¶]{1,80}\.[^@\s¶]{1,13})?
+    //   cnpjEmail         ([^@\s¶]{1,64}@[^@\s¶]{1,80}\.[^@\s¶]{1,13})?
+    //   cnpjPhone         ([0-9]{8,13})?
+    //   legalName         [^¶\n]{0,160}
+    //   googleMapsUrl     (https?://[^¶\n]{1,292})?
+    //   facebook          (https?://[^¶\n]{1,292})?
+    //   address           [^¶]{0,300}
+    //   channel           (|whatsapp|instagram|email)
+    //   fitReason         [^¶]{0,600}
+    //   previewId         [A-Za-z0-9]{0,40}
+    //   batchId           [A-Za-z0-9]{0,40}
+    //   owner             [^¶\n]{0,40}
+    //   lostReason        [^¶]{0,300}
+    //   prospectState     (pendente|aprovado|descartado)
+    //   discardReason     [^¶]{0,300}
+    //   qualification     (|qualificado|desqualificado)
+    //   disqualifyReason  [^¶]{0,300}
+    //   format            (|landing|institucional|catalogo)
+    //   formatReason      [^¶]{0,300}
     function validCrmFields(d) {
-      return d.status in stages()
-        && (!('notes' in d) || str(d.notes, 5000))
-        && (!('stageAt' in d) || d.stageAt is timestamp)
-        && (!('name' in d) || str(d.name, 120))
-        && (!('company' in d) || str(d.company, 120))
-        && (!('whatsapp' in d) || (d.whatsapp is string && d.whatsapp.matches('^([0-9]{10,13})?$')))
-        && (!('email' in d) || mail(d.email))
-        && (!('need' in d) || d.need in ['', 'institucional', 'sistema', 'nao-sei'])
-        && (!('origin' in d) || d.origin in ['site', 'cronus', 'indicacao', 'manual'])
-        && (!('role' in d) || str(d.role, 80))
-        && (!('instagram' in d) || (d.instagram is string && d.instagram.matches('^[A-Za-z0-9._]{0,30}$')))
-        && (!('niche' in d) || (d.niche is string && d.niche.matches('^[a-z0-9-]{0,60}$')))
-        && (!('city' in d) || str(d.city, 80))
-        && (!('state' in d) || (d.state is string && d.state.matches('^([A-Z]{2})?$')))
-        && (!('currentSite' in d) || url(d.currentSite))
-        && (!('siteStatus' in d) || d.siteStatus in ['', 'sem_site', 'site_fraco', 'ok'])
-        && (!('siteScore' in d) || (d.siteScore is int && d.siteScore >= 0 && d.siteScore <= 10))
-        && (!('siteReason' in d) || str(d.siteReason, 300))
-        && (!('googleRating' in d) || (d.googleRating is number && d.googleRating >= 0 && d.googleRating <= 5))
-        && (!('googleReviews' in d) || (d.googleReviews is int && d.googleReviews >= 0 && d.googleReviews <= 1000000))
-        && (!('cnpj' in d) || (d.cnpj is string && d.cnpj.matches('^([0-9]{14})?$')))
-        && (!('companyYears' in d) || (d.companyYears is int && d.companyYears >= 0 && d.companyYears <= 200))
-        && (!('phone' in d) || (d.phone is string && d.phone.matches('^([0-9]{8,13})?$')))
-        && (!('linkedin' in d) || url(d.linkedin))
-        && (!('companyLinkedin' in d) || url(d.companyLinkedin))
-        && (!('companyEmail' in d) || mail(d.companyEmail))
-        && (!('cnpjEmail' in d) || mail(d.cnpjEmail))
-        && (!('cnpjPhone' in d) || (d.cnpjPhone is string && d.cnpjPhone.matches('^([0-9]{8,13})?$')))
-        && (!('legalName' in d) || str(d.legalName, 160))
-        && (!('googleMapsUrl' in d) || url(d.googleMapsUrl))
-        && (!('facebook' in d) || url(d.facebook))
-        && (!('address' in d) || str(d.address, 300))
-        && (!('otherLinks' in d) || validLinks(d.otherLinks))
-        && (!('sources' in d) || validSources(d.sources))
-        && (!('channel' in d) || d.channel in ['', 'whatsapp', 'instagram', 'email'])
-        && (!('fitReason' in d) || str(d.fitReason, 600))
-        && (!('draft' in d) || validDraft(d.draft))
-        && (!('previewId' in d) || (d.previewId is string && d.previewId.matches('^[A-Za-z0-9]{0,40}$')))
-        && (!('batchId' in d) || (d.batchId is string && d.batchId.matches('^[A-Za-z0-9]{0,40}$')))
-        && (!('owner' in d) || str(d.owner, 40))
-        && (!('nextStep' in d) || validNextStep(d.nextStep))
-        && (!('meetingAt' in d) || tsOrNull(d.meetingAt))
-        && (!('lostReason' in d) || str(d.lostReason, 300))
-        && (!('prospectState' in d) || d.prospectState in ['pendente', 'aprovado', 'descartado'])
-        && (!('discardReason' in d) || str(d.discardReason, 300))
-        && (!('qualification' in d) || d.qualification in ['', 'qualificado', 'desqualificado'])
-        && (!('disqualifyReason' in d) || str(d.disqualifyReason, 300))
-        && (!('format' in d) || d.format in ['', 'landing', 'institucional', 'catalogo'])
-        && (!('formatReason' in d) || str(d.formatReason, 300))
-        && (!('brand' in d) || validBrand(d.brand))
-        && (!('drafts' in d) || (d.drafts is map
-            && d.drafts.keys().hasOnly(['whatsapp', 'instagram', 'email'])
-            && (!('whatsapp' in d.drafts) || str(d.drafts.whatsapp, 2000))
-            && (!('instagram' in d.drafts) || str(d.drafts.instagram, 2000))
-            && (!('email' in d.drafts) || str(d.drafts.email, 2000))));
+      return (d.status
+            + '¶' + d.get('notes', '')
+            + '¶' + d.get('name', '')
+            + '¶' + d.get('company', '')
+            + '¶' + d.get('whatsapp', '')
+            + '¶' + d.get('email', '')
+            + '¶' + d.get('need', '')
+            + '¶' + d.get('origin', 'site')
+            + '¶' + d.get('role', '')
+            + '¶' + d.get('instagram', '')
+            + '¶' + d.get('niche', '')
+            + '¶' + d.get('city', '')
+            + '¶' + d.get('state', '')
+            + '¶' + d.get('currentSite', '')
+            + '¶' + d.get('siteStatus', '')
+            + '¶' + d.get('siteReason', '')
+            + '¶' + d.get('cnpj', '')
+            + '¶' + d.get('phone', '')
+            + '¶' + d.get('linkedin', '')
+            + '¶' + d.get('companyLinkedin', '')
+            + '¶' + d.get('companyEmail', '')
+            + '¶' + d.get('cnpjEmail', '')
+            + '¶' + d.get('cnpjPhone', '')
+            + '¶' + d.get('legalName', '')
+            + '¶' + d.get('googleMapsUrl', '')
+            + '¶' + d.get('facebook', '')
+            + '¶' + d.get('address', '')
+            + '¶' + d.get('channel', '')
+            + '¶' + d.get('fitReason', '')
+            + '¶' + d.get('previewId', '')
+            + '¶' + d.get('batchId', '')
+            + '¶' + d.get('owner', '')
+            + '¶' + d.get('lostReason', '')
+            + '¶' + d.get('prospectState', 'pendente')
+            + '¶' + d.get('discardReason', '')
+            + '¶' + d.get('qualification', '')
+            + '¶' + d.get('disqualifyReason', '')
+            + '¶' + d.get('format', '')
+            + '¶' + d.get('formatReason', ''))
+          .matches('^(novo|mensagem_pronta|abordado|respondeu|em_conversa|reuniao|proposta|fechado|perdido|contato)¶[^¶]{0,1000}[^¶]{0,1000}[^¶]{0,1000}[^¶]{0,1000}[^¶]{0,1000}¶[^¶\\n]{0,120}¶[^¶\\n]{0,120}¶([0-9]{10,13})?¶([^@\\s¶]{1,64}@[^@\\s¶]{1,100}\\.[^@\\s¶]{1,24})?¶(|institucional|sistema|nao-sei)¶(site|cronus|indicacao|manual)¶[^¶\\n]{0,80}¶[A-Za-z0-9._]{0,30}¶[a-z0-9-]{0,60}¶[^¶\\n]{0,80}¶([A-Z]{2})?¶(https?://[^¶\\n]{1,292})?¶(|sem_site|site_fraco|ok)¶[^¶]{0,300}¶([0-9]{14})?¶([0-9]{8,13})?¶(https?://[^¶\\n]{1,292})?¶(https?://[^¶\\n]{1,292})?¶([^@\\s¶]{1,64}@[^@\\s¶]{1,100}\\.[^@\\s¶]{1,24})?¶([^@\\s¶]{1,64}@[^@\\s¶]{1,100}\\.[^@\\s¶]{1,24})?¶([0-9]{8,13})?¶[^¶\\n]{0,160}¶(https?://[^¶\\n]{1,292})?¶(https?://[^¶\\n]{1,292})?¶[^¶]{0,300}¶(|whatsapp|instagram|email)¶[^¶]{0,600}¶[A-Za-z0-9]{0,40}¶[A-Za-z0-9]{0,40}¶[^¶\\n]{0,40}¶[^¶]{0,300}¶(pendente|aprovado|descartado)¶[^¶]{0,300}¶(|qualificado|desqualificado)¶[^¶]{0,300}¶(|landing|institucional|catalogo)¶[^¶]{0,300}$')
+        && d.get('stageAt', request.time) is timestamp
+        && intIn(d.get('siteScore', 0), 10)
+        && numIn(d.get('googleRating', 0), 5)
+        && intIn(d.get('googleReviews', 0), 1000000)
+        && intIn(d.get('companyYears', 0), 200)
+        && validLinks(d.get('otherLinks', []))
+        && validSources(d.get('sources', {}))
+        && validDraft(d.get('draft', {}))
+        && validNextStep(d.get('nextStep', {}))
+        && tsOrNull(d.get('meetingAt', null))
+        && validBrand(d.get('brand', {}))
+        && validDrafts(d.get('drafts', {}));
+    }
+    function intIn(v, max) { return v is int && v >= 0 && v <= max; }
+    function numIn(v, max) { return v is number && v >= 0 && v <= max; }
+    function validDrafts(m) {
+      return m is map && m.keys().hasOnly(['whatsapp', 'instagram', 'email'])
+        && m.get('whatsapp', '').matches('^[\\s\\S]{0,1000}[\\s\\S]{0,1000}$')
+        && m.get('instagram', '').matches('^[\\s\\S]{0,1000}[\\s\\S]{0,1000}$')
+        && m.get('email', '').matches('^[\\s\\S]{0,1000}[\\s\\S]{0,1000}$');
     }
 
-    // Até 10 links, cada um http/https (as regras não têm laço, então cada posição é conferida)
-    function linkAt(l, i) { return l.size() <= i || url(l[i]); }
+    // Até 10 links, cada um http/https de até 300 caracteres (ou vazio)
     function validLinks(l) {
-      return l is list && l.size() <= 10
-        && linkAt(l, 0) && linkAt(l, 1) && linkAt(l, 2) && linkAt(l, 3) && linkAt(l, 4)
-        && linkAt(l, 5) && linkAt(l, 6) && linkAt(l, 7) && linkAt(l, 8) && linkAt(l, 9);
+      return textList(l, 10, '^(https?://[^¶]{1,292})?(¶(https?://[^¶]{1,292})?)*$');
     }
 
     // De onde veio cada dado: chave = nome do campo, valor = texto curto (ex.: 'google_maps')
-    function srcOk(s, k) { return !(k in s) || str(s[k], 40); }
     function validSources(s) {
       return s is map
         && s.keys().hasOnly([
@@ -408,44 +539,41 @@ service cloud.firestore {
           'cnpjEmail', 'cnpjPhone', 'legalName', 'googleMapsUrl', 'facebook', 'address',
           'otherLinks', 'channel', 'fitReason'
         ])
-        && srcOk(s, 'name') && srcOk(s, 'company') && srcOk(s, 'whatsapp') && srcOk(s, 'email')
-        && srcOk(s, 'role') && srcOk(s, 'instagram') && srcOk(s, 'niche') && srcOk(s, 'city')
-        && srcOk(s, 'state') && srcOk(s, 'currentSite') && srcOk(s, 'siteStatus') && srcOk(s, 'siteScore')
-        && srcOk(s, 'siteReason') && srcOk(s, 'googleRating') && srcOk(s, 'googleReviews') && srcOk(s, 'cnpj')
-        && srcOk(s, 'companyYears') && srcOk(s, 'phone') && srcOk(s, 'linkedin') && srcOk(s, 'companyLinkedin')
-        && srcOk(s, 'companyEmail') && srcOk(s, 'cnpjEmail') && srcOk(s, 'cnpjPhone') && srcOk(s, 'legalName')
-        && srcOk(s, 'googleMapsUrl') && srcOk(s, 'facebook') && srcOk(s, 'address') && srcOk(s, 'otherLinks')
-        && srcOk(s, 'channel') && srcOk(s, 'fitReason');
+        // cada valor: texto de até 40 caracteres
+        && noSep(s.values())
+        && s.values().join('¶').matches('^[^¶]{0,40}(¶[^¶]{0,40})*$');
     }
 
     function validDraft(m) {
       return m is map
         && m.keys().hasOnly(['channel', 'text', 'approved', 'approvedAt', 'sentAt', 'previewId'])
-        && (!('previewId' in m) || (m.previewId is string && m.previewId.matches('^[A-Za-z0-9]{0,40}$')))
-        && (!('channel' in m) || m.channel in ['', 'whatsapp', 'instagram', 'email'])
-        && (!('text' in m) || str(m.text, 2000))
-        && (!('approved' in m) || m.approved is bool)
-        && (!('approvedAt' in m) || tsOrNull(m.approvedAt))
-        && (!('sentAt' in m) || tsOrNull(m.sentAt));
+        && m.get('previewId', '').matches('^[A-Za-z0-9]{0,40}$')
+        && m.get('channel', '') in ['', 'whatsapp', 'instagram', 'email']
+        && m.get('text', '').matches('^[\\s\\S]{0,1000}[\\s\\S]{0,1000}$')
+        && m.get('approved', false) is bool
+        && tsOrNull(m.get('approvedAt', null))
+        && tsOrNull(m.get('sentAt', null));
     }
 
     function validNextStep(m) {
       return m is map
         && m.keys().hasOnly(['text', 'dueAt'])
-        && (!('text' in m) || str(m.text, 300))
-        && (!('dueAt' in m) || tsOrNull(m.dueAt));
+        && m.get('text', '').matches('^[\\s\\S]{0,300}$')
+        && tsOrNull(m.get('dueAt', null));
     }
 
-    // Cadastro manual pelo admin (indicação ou contato que chegou fora do site)
-    function validCrmLead(d) {
+    // Cadastro manual pelo admin (indicação ou contato que chegou fora do site).
+    // Os valores de cada campo são conferidos por validCrmFields, no allow.
+    function crmLeadShape(d) {
       return d.keys().hasOnly(crmEditable().concat(['createdAt', 'createdBy']))
         && d.createdBy == 'admin'
         && d.createdAt == request.time
         && d.origin in ['manual', 'indicacao']
-        && d.status in stages() && d.status != 'contato'
-        && ((('name' in d) && d.name is string && d.name.size() >= 2)
-            || (('company' in d) && d.company is string && d.company.size() >= 2))
-        && validCrmFields(d);
+        && d.status != 'contato'
+        && hasNameOrCompany(d);
+    }
+    function hasNameOrCompany(d) {
+      return d.get('name', '').size() >= 2 || d.get('company', '').size() >= 2;
     }
 
     function validInteraction(d) {
@@ -455,7 +583,55 @@ service cloud.firestore {
         && d.channel in ['', 'whatsapp', 'instagram', 'email', 'telefone', 'outro']
         && str(d.from, 40) && str(d.to, 40)
         && d.createdAt == request.time
-        && d.createdBy == 'admin';
+        && d.createdBy in ['admin', 'cronus'];
+    }
+
+    // Campos que o CronUS pode gravar (lista fechada). Fora dela: notes, owner, lostReason,
+    // discardReason, origin, createdAt, createdBy e todos os campos vindos do site.
+    function botEditable() {
+      return [
+        'status', 'updatedAt', 'stageAt', 'name', 'company', 'whatsapp', 'email', 'need',
+        'role', 'instagram', 'niche', 'city', 'state', 'currentSite', 'siteStatus', 'siteScore',
+        'siteReason', 'googleRating', 'googleReviews', 'cnpj', 'companyYears', 'phone', 'linkedin',
+        'companyLinkedin', 'companyEmail', 'cnpjEmail', 'cnpjPhone', 'legalName', 'googleMapsUrl',
+        'facebook', 'address', 'otherLinks', 'sources', 'channel', 'fitReason', 'draft', 'previewId',
+        'batchId', 'nextStep', 'meetingAt', 'prospectState', 'drafts', 'qualification',
+        'disqualifyReason', 'format', 'formatReason', 'brand'
+      ];
+    }
+    function botStages() { return ['novo', 'mensagem_pronta', 'abordado', 'respondeu', 'em_conversa', 'reuniao']; }
+
+    // A mensagem do bot nasce pendente da aprovação do Pedro
+    function botDraft(m) {
+      return (!('approved' in m) || m.approved == false)
+        && (!('approvedAt' in m) || m.approvedAt == null)
+        && (!('sentAt' in m) || m.sentAt == null);
+    }
+
+    // Lead do CronUS: criado por ele (origin e createdBy). Um admin pode mudar a origem de
+    // um lead para 'cronus', mas createdBy é imutável, então o bot continua sem acesso.
+    function isBotLead(d) { return d.get('origin', '') == 'cronus' && d.get('createdBy', '') == 'cronus'; }
+
+    // Update do bot: só campos dele e dentro dos limites (n = novo, o = atual)
+    function botUpdate(n, o) {
+      let k = n.diff(o).affectedKeys();
+      return k.hasOnly(botEditable())
+        && (!('status' in k) || n.status in botStages())
+        && (!('prospectState' in k) || (n.prospectState == 'pendente'
+            && !(o.get('prospectState', '') in ['aprovado', 'descartado'])))
+        && (!('draft' in k) || (botDraft(n.draft) && botDraft(o.get('draft', {}))));
+    }
+
+    // Formato do lead criado pelo CronUS (os valores vão em validCrmFields, no allow)
+    function botLeadShape(d) {
+      return d.keys().hasOnly(botEditable().concat(['origin', 'createdAt', 'createdBy']))
+        && d.origin == 'cronus'
+        && d.createdBy == 'cronus'
+        && d.createdAt == request.time
+        && d.status in botStages()
+        && d.get('prospectState', 'pendente') == 'pendente'
+        && botDraft(d.get('draft', {}))
+        && hasNameOrCompany(d);
     }
 
     // ---------------- Todo o resto: fechado ----------------

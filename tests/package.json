@@ -3,7 +3,8 @@
   "private": true,
   "description": "Testes das regras do Firestore no emulador local. Nunca rodam contra produção.",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore --project demo-cron \"mocha --timeout 20000 rules/*.test.js\""
+    "test": "cd .. && firebase emulators:exec --only firestore --project demo-cron \"npm --prefix tests run rules\"",
+    "rules": "node run-rules.js"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

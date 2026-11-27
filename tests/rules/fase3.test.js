@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
+const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
+const { assertSucceeds, assertFails, P } = require('./helpers');
 const { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, addDoc, collection, query, where, serverTimestamp } = require('firebase/firestore');
 
 let env;
@@ -12,10 +13,10 @@ const IMG = 'data:image/webp;base64,UklGRhIAAABXRUJQVlA4TAYAAAAvAAAAAAfQ//73v/+B
 
 function preview(extra) {
   return Object.assign({
-    leadId: 'lead1', niche: 'industria-moveis', template: '_base', format: 'catalogo', formatReason: 'Muitos produtos',
+    template: '_base', format: 'catalogo',
     companyName: 'Bellini Estofados', tagline: 'Estofados feitos para durar', mainService: 'Estofados sob medida',
     services: ['Sofás', 'Poltronas'], primaryColor: '#c6ff02', secondaryColor: '#1a1a1a', logo: IMG,
-    products: [{ name: 'Sofá Aurora', description: 'Retrátil', category: 'Sofás', image: IMG }], categories: ['Sofás'],
+    products: P([{ name: 'Sofá Aurora', description: 'Retrátil', category: 'Sofás', image: IMG }]), categories: ['Sofás'],
     texts: { headline: 'Olá', diferenciais: ['Um', 'Dois'] },
     active: true, createdBy: 'admin', createdAt: serverTimestamp(), updatedAt: serverTimestamp()
   }, extra || {});
@@ -36,7 +37,8 @@ beforeEach(async () => {
     await setDoc(doc(db, 'leads', 'lead1'), { origin: 'cronus', createdBy: 'cronus', status: 'novo', company: 'Bellini', createdAt: new Date() });
     await setDoc(doc(db, 'previews', 'ativaAtivaAtivaAtiva'), Object.assign(preview(), { createdAt: new Date(), updatedAt: new Date() }));
     await setDoc(doc(db, 'previews', 'inativaInativaInativ'), Object.assign(preview({ active: false }), { createdAt: new Date(), updatedAt: new Date() }));
-    await setDoc(doc(db, 'leads', 'lead1', 'kit', 'marca'), { logo: IMG, products: [], categories: [], updatedAt: new Date(), updatedBy: 'admin' });
+    await setDoc(doc(db, 'leads', 'lead1', 'kit', 'marca'), { logo: IMG, products: P([]), categories: [], updatedAt: new Date(), updatedBy: 'admin' });
+    await setDoc(doc(db, 'leads', 'lead1', 'previews', 'ativaAtivaAtivaAtiva'), { niche: 'industria-moveis', formatReason: 'Muitos produtos', createdAt: new Date() });
   });
 });
 
@@ -59,9 +61,16 @@ describe('prévias: público', () => {
 });
 
 describe('prévias: admin', () => {
-  it('cria prévia válida e lista por lead', async () => {
-    await assertSucceeds(addDoc(collection(admin(), 'previews'), preview()));
-    await assertSucceeds(getDocs(query(collection(admin(), 'previews'), where('leadId', '==', 'lead1'))));
+  it('cria prévia válida e lista as prévias do lead pelo índice privado', async () => {
+    const ref = await assertSucceeds(addDoc(collection(admin(), 'previews'), preview()));
+    await assertSucceeds(setDoc(doc(admin(), 'leads', 'lead1', 'previews', ref.id), { niche: 'industria-moveis', formatReason: 'Catálogo grande', createdAt: serverTimestamp() }));
+    await assertSucceeds(getDocs(collection(admin(), 'leads', 'lead1', 'previews')));
+  });
+  it('recusa campos internos no documento público', async () => {
+    await assertFails(addDoc(collection(admin(), 'previews'), preview({ leadId: 'lead1' })));
+    await assertFails(addDoc(collection(admin(), 'previews'), preview({ niche: 'industria-moveis' })));
+    await assertFails(addDoc(collection(admin(), 'previews'), preview({ formatReason: 'Muitos produtos' })));
+    await assertFails(updateDoc(doc(admin(), 'previews', 'ativaAtivaAtivaAtiva'), { formatReason: 'x', updatedAt: serverTimestamp() }));
   });
   it('recusa campo a mais, cor, formato e data inválidos', async () => {
     await assertFails(addDoc(collection(admin(), 'previews'), preview({ phone: '14999990000' })));
@@ -72,15 +81,20 @@ describe('prévias: admin', () => {
   });
   it('recusa produtos fora do limite', async () => {
     const many = Array.from({ length: 25 }, (_, i) => ({ name: 'Produto ' + i }));
-    await assertFails(addDoc(collection(admin(), 'previews'), preview({ products: many })));
-    await assertFails(addDoc(collection(admin(), 'previews'), preview({ products: [{ name: 'x'.repeat(61) }] })));
-    await assertFails(addDoc(collection(admin(), 'previews'), preview({ products: [{ name: 'Ok', image: 'https://site.com/foto.jpg' }] })));
+    await assertFails(addDoc(collection(admin(), 'previews'), preview({ products: P(many) })));
+    await assertFails(addDoc(collection(admin(), 'previews'), preview({ products: P([{ name: 'x'.repeat(61) }]) })));
+    await assertFails(addDoc(collection(admin(), 'previews'), preview({ products: P([{ name: 'Ok', image: 'https://site.com/foto.jpg' }]) })));
     await assertFails(addDoc(collection(admin(), 'previews'), preview({ logo: 'data:text/html;base64,PGgxPg==' })));
-    await assertSucceeds(addDoc(collection(admin(), 'previews'), preview({ products: Array.from({ length: 24 }, (_, i) => ({ name: 'Produto ' + i })) })));
+    await assertSucceeds(addDoc(collection(admin(), 'previews'), preview({ products: P(Array.from({ length: 24 }, (_, i) => ({ name: 'Produto ' + i }))) })));
   });
-  it('atualiza e desativa, mas não troca o lead', async () => {
+  it('atualiza e desativa, sem mudar quem criou nem quando', async () => {
     await assertSucceeds(updateDoc(doc(admin(), 'previews', 'ativaAtivaAtivaAtiva'), { active: false, updatedAt: serverTimestamp() }));
-    await assertFails(updateDoc(doc(admin(), 'previews', 'ativaAtivaAtivaAtiva'), { leadId: 'outro', updatedAt: serverTimestamp() }));
+    await assertFails(updateDoc(doc(admin(), 'previews', 'ativaAtivaAtivaAtiva'), { createdBy: 'cronus', updatedAt: serverTimestamp() }));
+  });
+  it('índice privado: data de criação não muda e visitante não lê', async () => {
+    await assertSucceeds(updateDoc(doc(admin(), 'leads', 'lead1', 'previews', 'ativaAtivaAtivaAtiva'), { formatReason: 'Outro motivo' }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'lead1', 'previews', 'ativaAtivaAtivaAtiva'), { createdAt: new Date(2020, 0, 1) }));
+    await assertFails(getDoc(doc(pub(), 'leads', 'lead1', 'previews', 'ativaAtivaAtivaAtiva')));
   });
   it('apaga (exclusão completa do lead)', async () => {
     await assertSucceeds(deleteDoc(doc(admin(), 'previews', 'inativaInativaInativ')));
@@ -114,13 +128,13 @@ describe('qualificação e marca no lead', () => {
 
 describe('kit da marca', () => {
   it('só aceita o documento marca', async () => {
-    await assertSucceeds(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { logo: IMG, products: [{ name: 'Mesa' }], categories: ['Mesas'], updatedAt: serverTimestamp(), updatedBy: 'admin' }));
+    await assertSucceeds(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { logo: IMG, products: P([{ name: 'Mesa' }]), categories: ['Mesas'], updatedAt: serverTimestamp(), updatedBy: 'admin' }));
     await assertFails(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'outro'), { logo: IMG, updatedAt: serverTimestamp(), updatedBy: 'admin' }));
   });
   it('respeita os limites de logo e produtos', async () => {
     await assertFails(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { logo: 'data:image/png;base64,' + 'A'.repeat(200001), updatedAt: serverTimestamp(), updatedBy: 'admin' }));
-    await assertFails(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { products: Array.from({ length: 25 }, () => ({ name: 'x' })), updatedAt: serverTimestamp(), updatedBy: 'admin' }));
-    await assertFails(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { products: [{ name: 'x', image: 'data:image/png;base64,' + 'A'.repeat(30001) }], updatedAt: serverTimestamp(), updatedBy: 'admin' }));
+    await assertFails(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { products: P(Array.from({ length: 25 }, () => ({ name: 'x' }))), updatedAt: serverTimestamp(), updatedBy: 'admin' }));
+    await assertFails(setDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca'), { products: P(Array.from({ length: 24 }, () => ({ name: 'x', image: 'data:image/png;base64,' + 'A'.repeat(30001) }))), updatedAt: serverTimestamp(), updatedBy: 'admin' }));
   });
   it('admin apaga junto com o lead', async () => {
     await assertSucceeds(deleteDoc(doc(admin(), 'leads', 'lead1', 'kit', 'marca')));

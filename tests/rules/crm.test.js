@@ -4,7 +4,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
+const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
+const { assertSucceeds, assertFails } = require('./helpers');
 const { doc, setDoc, updateDoc, deleteDoc, getDoc, addDoc, collection, serverTimestamp, deleteField, Timestamp } = require('firebase/firestore');
 
 let env;
@@ -107,7 +108,7 @@ describe('edição pelo admin', () => {
     await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { otherLinks: ['https://a.com', 'javascript:alert(1)'] }));
     await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { otherLinks: Array(11).fill('https://a.com') }));
     await assertSucceeds(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: 'google_maps', cnpj: 'receita' } }));
-    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: 123 } }));
+    await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: { tipo: 'mapa' } } }));
     await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { whatsapp: 'x'.repeat(41) } }));
     await assertFails(updateDoc(doc(admin(), 'leads', 'old'), { sources: { inventado: 'x' } }));
   });

@@ -1,0 +1,26 @@
+name: Testes das regras do Firestore
+
+# Roda só no emulador local do runner, com o projeto fictício demo-cron. Nunca toca em produção.
+on:
+  push:
+    paths: ['firestore.rules', 'firebase.json', 'tests/**', '.github/workflows/regras.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regras:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - name: Instalar
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+      - name: Rodar os quatro arquivos, cada um no seu processo
+        working-directory: tests
+        run: npm test

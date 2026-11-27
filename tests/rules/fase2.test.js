@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
+const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
+const { assertSucceeds, assertFails } = require('./helpers');
 const { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, addDoc, collection, serverTimestamp, deleteField } = require('firebase/firestore');
 
 let env;
@@ -79,12 +80,25 @@ describe('rodadas', () => {
 
 describe('usuários (admins)', () => {
   const novo = () => ({ name: 'Ana', email: 'ana@x.com', role: 'admin', createdAt: serverTimestamp(), createdBy: ADMIN });
-  it('admin lista, adiciona e remove outro admin', async () => {
+  const withOwner = () => env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'config', 'owner'), { uid: ADMIN, createdAt: new Date() });
+  });
+  it('admin lista, adiciona e remove outro admin (com config/owner criado)', async () => {
+    await withOwner();
     await assertSucceeds(getDocs(collection(admin(), 'admins')));
     await assertSucceeds(setDoc(doc(admin(), 'admins', 'novoUid00000000000000001'), novo()));
     await assertSucceeds(deleteDoc(doc(admin(), 'admins', OTHER)));
   });
+  it('sem config/owner, ninguém remove admin', async () => {
+    await assertFails(deleteDoc(doc(admin(), 'admins', OTHER)));
+  });
+  it('ninguém remove o dono, nem outro admin', async () => {
+    await withOwner();
+    const other = env.authenticatedContext(OTHER).firestore();
+    await assertFails(deleteDoc(doc(other, 'admins', ADMIN)));
+  });
   it('ninguém remove o próprio acesso', async () => {
+    await withOwner();
     await assertFails(deleteDoc(doc(admin(), 'admins', ADMIN)));
   });
   it('admin completa nome e e-mail', async () => {
