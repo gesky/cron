@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/admin.css">
   <link rel="stylesheet" href="css/admin-crm.css">
   <link rel="stylesheet" href="css/admin-prospeccao.css">
+  <link rel="stylesheet" href="css/admin-modelos.css">
 </head>
 <body>
 
@@ -213,6 +214,7 @@
               <button data-pstate="aprovado" aria-pressed="false">Aprovados <b id="cApr">0</b></button>
               <button data-pstate="descartado" aria-pressed="false">Descartados <b id="cDesc">0</b></button>
             </div>
+            <div class="crm-stages pr-qual" id="prQual" role="group" aria-label="Filtrar por qualificação"></div>
             <label class="check" id="prSelAllWrap"><input type="checkbox" id="prSelAll"><span>Selecionar todos</span></label>
           </div>
           <div class="pr-cards" id="prCards" aria-live="polite"></div>
@@ -290,6 +292,11 @@
             <label class="f"><span>Etapa</span><select id="ldStage"></select></label>
             <p class="ld-lost" id="ldLost" hidden></p>
           </div>
+
+          <section class="ld-box" aria-labelledby="ldModeloTitle">
+            <h3 id="ldModeloTitle">Qualificação e prévia</h3>
+            <div id="ldModelo" aria-live="polite"></div>
+          </section>
 
           <section class="ld-box" aria-labelledby="ldNextTitle">
             <h3 id="ldNextTitle">Próximo passo</h3>
@@ -564,6 +571,77 @@
     </aside>
   </div>
 
+  <!-- ===================== GAVETA: QUALIFICAÇÃO E PRÉVIA (Prospecção) ===================== -->
+  <div class="drawer drawer--lead" id="modeloDrawer" hidden>
+    <div class="drawer__backdrop" data-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="mdTitle">
+      <header class="drawer__head">
+        <div>
+          <p class="top__eyebrow">Qualificação e prévia</p>
+          <h2 id="mdTitle">Lead</h2>
+        </div>
+        <button class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <div class="drawer__body" id="mdBody" aria-live="polite"></div>
+    </aside>
+  </div>
+
+  <!-- ===================== GAVETA: EDITAR PRÉVIA ===================== -->
+  <div class="drawer drawer--lead" id="previewDrawer" hidden>
+    <div class="drawer__backdrop" data-close></div>
+    <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+      <header class="drawer__head">
+        <div>
+          <p class="top__eyebrow">Site modelo</p>
+          <h2 id="pvTitle">Editar prévia</h2>
+        </div>
+        <button class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </header>
+      <form class="drawer__body pv-form" id="previewForm" novalidate>
+        <div class="grid2">
+          <label class="f"><span>Formato</span><select name="format"><option value="landing">Landing</option><option value="institucional">Institucional</option><option value="catalogo">Catálogo</option></select></label>
+          <label class="f"><span>Por que esse formato</span><input name="formatReason" maxlength="300"></label>
+        </div>
+        <div class="grid2">
+          <label class="f"><span>Nome da empresa</span><input name="companyName" maxlength="120" required></label>
+          <label class="f"><span>Slogan</span><input name="tagline" maxlength="120"></label>
+        </div>
+        <label class="f"><span>Serviço principal</span><input name="mainService" maxlength="80"></label>
+        <label class="f"><span>Serviços (um por linha, até 8)</span><textarea name="services" rows="4"></textarea></label>
+        <div class="grid2">
+          <label class="f mp-color"><span>Cor principal</span><span class="fld"><input type="color" name="primaryPick" aria-label="Cor principal (seletor)"><input name="primaryColor" maxlength="7" placeholder="#rrggbb" aria-label="Cor principal (código)"></span></label>
+          <label class="f mp-color"><span>Cor secundária</span><span class="fld"><input type="color" name="secondaryPick" aria-label="Cor secundária (seletor)"><input name="secondaryColor" maxlength="7" placeholder="#rrggbb" aria-label="Cor secundária (código)"></span></label>
+        </div>
+        <div class="pv-kit"><span id="pvKitInfo" class="muted"></span><button class="btn-text" type="button" id="pvFromKit">Copiar logo e produtos do kit atual</button></div>
+
+        <fieldset class="ld-group">
+          <legend>Textos</legend>
+          <p class="muted pv-hint">Em branco, a prévia usa o texto padrão do template (aparece em cinza). Use {empresa}, {servicoPrincipal} e {servicos} se quiser.</p>
+          <div class="pv-texts">
+            <label class="f"><span>Chamada principal <button class="btn-text" type="button" data-restore="t_headline">Restaurar padrão</button></span><input name="t_headline" maxlength="120"></label>
+            <label class="f"><span>Texto de apoio da chamada <button class="btn-text" type="button" data-restore="t_subheadline">Restaurar padrão</button></span><textarea name="t_subheadline" maxlength="240" rows="2"></textarea></label>
+            <label class="f"><span>Sobre <button class="btn-text" type="button" data-restore="t_about">Restaurar padrão</button></span><textarea name="t_about" maxlength="900" rows="4"></textarea></label>
+            <div class="grid2">
+              <label class="f"><span>Botão principal <button class="btn-text" type="button" data-restore="t_ctaPrimary">Restaurar</button></span><input name="t_ctaPrimary" maxlength="40"></label>
+              <label class="f"><span>Botão secundário <button class="btn-text" type="button" data-restore="t_ctaSecondary">Restaurar</button></span><input name="t_ctaSecondary" maxlength="40"></label>
+            </div>
+            <label class="f"><span>Diferenciais (um por linha, até 6) <button class="btn-text" type="button" data-restore="t_diferenciais">Restaurar padrão</button></span><textarea name="t_diferenciais" rows="4"></textarea></label>
+            <label class="f"><span>Benefícios da landing (um por linha, até 6) <button class="btn-text" type="button" data-restore="t_benefits">Restaurar padrão</button></span><textarea name="t_benefits" rows="4"></textarea></label>
+            <label class="f"><span>Título do contato <button class="btn-text" type="button" data-restore="t_contactTitle">Restaurar padrão</button></span><input name="t_contactTitle" maxlength="80"></label>
+            <label class="f"><span>Texto do contato <button class="btn-text" type="button" data-restore="t_contactText">Restaurar padrão</button></span><textarea name="t_contactText" maxlength="240" rows="2"></textarea></label>
+            <label class="f pv-cat"><span>Título do catálogo <button class="btn-text" type="button" data-restore="t_catalogTitle">Restaurar padrão</button></span><input name="t_catalogTitle" maxlength="80"></label>
+            <label class="f pv-cat"><span>Texto do catálogo <button class="btn-text" type="button" data-restore="t_catalogText">Restaurar padrão</button></span><textarea name="t_catalogText" maxlength="240" rows="2"></textarea></label>
+          </div>
+        </fieldset>
+        <p class="form-msg" id="pvMsg" role="alert"></p>
+        <div class="drawer__foot">
+          <button class="btn btn--ghost" type="button" data-close>Cancelar</button>
+          <button class="btn btn--lime" type="submit" id="pvSave">Salvar prévia</button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
   <!-- Pergunta com campo de texto -->
   <div class="confirm" id="promptDlg" hidden>
     <div class="confirm__card" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
@@ -585,9 +663,13 @@
   <script src="js/vendor/firebase-auth-compat.js"></script>
   <script src="js/vendor/firebase-firestore-compat.js"></script>
   <script src="js/firebase-config.js"></script>
+  <script src="modelo/templates/registry.js"></script>
+  <script src="modelo/templates/_base/template.js"></script>
+  <script src="modelo/demo-data.js"></script>
   <script src="js/admin.js"></script>
   <script src="js/admin-crm.js"></script>
   <script src="js/admin-prospeccao.js"></script>
   <script src="js/admin-users.js"></script>
+  <script src="js/admin-modelos.js"></script>
 </body>
 </html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- Prévia pública por link: só scripts, estilos e fontes do próprio site; dados só do Firestore -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://*.googleapis.com; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#ffffff">
+  <title>Rascunho de site</title>
+  <link rel="icon" href="../img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../css/fonts.css">
+  <link rel="stylesheet" href="modelo.css">
+</head>
+<body>
+  <div class="m-loading" id="mLoading" role="status" aria-live="polite"><span class="m-spinner" aria-hidden="true"></span><span class="m-sr">Carregando o rascunho</span></div>
+
+  <main class="m-unavailable" id="mUnavailable" hidden>
+    <img src="../img/cron-icon.svg" alt="" width="40" height="40">
+    <h1>Este rascunho não está disponível.</h1>
+    <p>Se você recebeu este link, peça um novo para quem enviou.</p>
+  </main>
+
+  <div id="mSite" class="m-site" hidden></div>
+
+  <footer class="m-draftbar" id="mDraftbar" hidden>
+    <span id="mDraftText">Rascunho feito pela Cron Web Studio</span>
+    <a href="https://cronwebstudio.com.br" rel="noopener" target="_blank" class="m-draftbar__brand"><img src="../img/cron-icon.svg" alt="" width="16" height="16">Cron Web Studio</a>
+  </footer>
+
+  <div class="m-notice" id="mNotice" role="status" aria-live="polite" hidden>No site final, este botão leva direto ao seu WhatsApp.</div>
+
+  <script src="../js/vendor/firebase-app-compat.js"></script>
+  <script src="../js/vendor/firebase-firestore-compat.js"></script>
+  <script src="../js/firebase-config.js"></script>
+  <script src="templates/registry.js"></script>
+  <script src="demo-data.js"></script>
+  <script src="modelo.js"></script>
+</body>
+</html>

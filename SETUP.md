@@ -20,6 +20,8 @@ O que elas fazem:
 - **projects**: qualquer visitante lê só os publicados; só o admin cria, edita e exclui.
 - **leads**: qualquer visitante pode enviar (com consentimento LGPD e campos validados); só o admin lê, edita e exclui.
 - **leads/{id}/interacoes**: histórico de cada lead; só o admin lê, cria e apaga (o painel apaga o histórico junto com o lead); ninguém edita.
+- **leads/{id}/kit/marca**: logo e produtos do lead; só o admin lê e grava.
+- **previews**: sites modelo; qualquer pessoa abre só uma prévia ativa pelo id (nunca lista); só o admin cria, edita e apaga.
 - **rodadas**: rodadas de prospecção; só o admin lê, cria e edita; ninguém apaga (arquiva).
 - **admins**: lista de quem pode entrar no painel. Os próprios admins adicionam e removem pela aba Usuários; ninguém remove o próprio acesso.
 
@@ -129,6 +131,7 @@ css/motion.css              animação do painel
 css/admin.css               painel
 css/admin-crm.css           CRM do painel (quadro, cartões, gaveta do lead)
 css/admin-prospeccao.css    Prospecção, Usuários e menu do painel no celular
+css/admin-modelos.css       qualificação, marca, kit e site modelo no painel
 fonts/                      arquivos da Sora
 js/early.js, js/intro.js    marcação inicial e abertura 3D
 js/firebase-config.js       chaves do Firebase (+ App Check opcional)
@@ -141,6 +144,8 @@ js/admin.js                 núcleo do painel (login, abas, dados, projetos) e w
 js/admin-crm.js             aba CRM
 js/admin-prospeccao.js      aba Prospecção (rodadas, candidatos, fila de aprovação)
 js/admin-users.js           aba Usuários
+js/admin-modelos.js         qualificação, marca, kit e site modelo (CRON_ADMIN.previews)
+modelo/                     página pública do site modelo (noindex, fora do sitemap)
 js/vendor/                  Firebase e Lenis hospedados no site
 firestore.rules             regras de segurança (colar no console)
 tests/                      testes das regras no emulador (não vão para o banco real)
@@ -244,3 +249,50 @@ Tira o acesso ao painel na hora (se a pessoa estiver com o painel aberto, ele fe
 ### Testes
 
 `tests/rules/fase2.test.js` cobre rodadas, prospecção nos leads e usuários (`cd tests && npm install && npm test`).
+
+## Sites modelo (fase 3)
+
+Para cada lead qualificado, o painel gera com um clique um rascunho de site: o template do nicho com a logo, as cores, os serviços e textos padrão já com o nome da empresa. Você aprova a mensagem e a prévia juntas. Nada é enviado sozinho.
+
+### Fluxo
+
+1. **Qualificação** (cartão da Prospecção ou gaveta do lead): Qualificado, Desqualificado (pede o motivo) ou Sem avaliação. Desqualificado não ganha prévia. Dá para aprovar um desqualificado mesmo assim, com confirmação.
+2. **Formato**: Landing, Institucional ou Catálogo, com o motivo ao lado. "Site + sistema" não é formato de prévia: é assunto de reunião.
+3. **Marca**: cores (`#rrggbb`), slogan, serviço principal e até 8 serviços. Fica no lead (`brand`).
+4. **Kit**: logo e, no catálogo, até 24 produtos com categoria, descrição e foto. Fica em `leads/{id}/kit/marca`, fora do lead, para não pesar o painel. As imagens são convertidas para WebP (logo até 512 px, produtos até 480 px). O painel mostra o peso e avisa acima de 800 KB (o documento do Firestore aceita até 1 MB).
+5. **Gerar site modelo**: só com o lead qualificado, formato escolhido e nome da empresa. Cria a prévia, liga ao lead (`previewId`), registra no histórico e abre numa aba nova. "Gerar de novo" desativa a anterior (não apaga).
+6. **Editar prévia**: todos os campos e os textos. Em branco, vale o texto padrão do template, mostrado em cinza. "Copiar logo e produtos do kit atual" atualiza as imagens.
+7. **Aprovar**: na fila ou na rodada, aprovar grava `draft.previewId` e garante que a prévia está ativa.
+
+### Link na mensagem
+
+Escreva `{link}` no texto da mensagem para o endereço da prévia entrar no lugar ao copiar ou abrir o WhatsApp. Sem `{link}`, nada é anexado: a abordagem pergunta antes e o link vai depois, pelo botão **Copiar link**.
+
+### Página pública `modelo/`
+
+- Endereço: `https://cronwebstudio.com.br/modelo/?id=<id>` (id aleatório de 20 caracteres).
+- Só abre prévia ativa. Id inválido, inexistente ou desativado mostra "Este rascunho não está disponível." sem revelar nada.
+- `noindex`, `Disallow: /modelo/` no `robots.txt`, fora do `sitemap.xml`, CSP fechada, sem script inline e anti-iframe.
+- Os botões da prévia não levam a lugar nenhum: mostram "No site final, este botão leva direto ao seu WhatsApp."
+- A prévia não guarda contato, cidade, endereço, nota do Google nem motivos internos.
+
+### Templates
+
+- Cada template fica em `modelo/templates/<nome>/` com `template.js` (textos padrão e desenho) e `template.css`.
+- Só carregam os nomes de `modelo/templates/registry.js`. A prévia usa o template com o nome do nicho do lead, se ele estiver na lista; senão, `_base`.
+- Textos padrão por formato, com os marcadores `{empresa}`, `{servicoPrincipal}` e `{servicos}`. Prioridade: texto da prévia, depois o padrão do template, depois o padrão do `_base`.
+- **Novo nicho**: copie `modelo/templates/_base` para `modelo/templates/<nicho>` (o mesmo código usado no campo Nicho do lead, ex.: `industria-moveis`), troque o nome em `CRON_MODELO.register('<nicho>', ...)`, ajuste os textos padrão e o visual e acrescente o nome em `registry.js`. Para os textos padrão aparecerem como sugestão na edição do painel, inclua também o `template.js` novo no `admin.html`, logo depois do `_base`.
+- Regras dos textos padrão: sem travessão, sem emoji, sem cidade, sem preço e sem dados inventados (anos de empresa, número de clientes, depoimentos, selos).
+
+### Modo demonstração
+
+- Painel: `admin.html?demo` já traz três leads com prévia (landing, institucional e catálogo), um desqualificado e um sem avaliação. As prévias geradas no demo ficam no navegador (`localStorage`).
+- Página: `modelo/?demo=demoLanding000000001`, `modelo/?demo=demoInstitucional001` ou `modelo/?demo=demoCatalogo00000001` (só no computador).
+
+### Exclusão completa
+
+Excluir um lead apaga também o histórico, o kit e todas as prévias dele.
+
+### Testes
+
+`tests/rules/fase3.test.js` cobre prévias (público e admin), kit e os campos novos do lead.

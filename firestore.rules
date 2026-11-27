@@ -8,6 +8,8 @@ rules_version = '2';
 //          o admin lê, cadastra leads manuais e edita os campos de CRM (nunca consentimento,
 //          UTM, data de criação ou de onde o lead clicou no site)
 // - leads/{id}/interacoes: histórico do lead; admin lê, cria e apaga (ao excluir o lead); ninguém edita
+// - leads/{id}/kit/marca: logo e produtos do lead (pesados, fora do documento do lead); só admin
+// - previews: sites modelo; visitante lê só a prévia ativa pelo id (nunca lista); admin gerencia
 // - rodadas: rodadas de prospecção; admin lê, cria e edita; nunca apaga (arquiva)
 // - admins: cada documento com o UID libera o painel; admins gerenciam outros admins
 //           pelo painel (ninguém remove o próprio acesso)
@@ -43,6 +45,128 @@ service cloud.firestore {
         && d.role == 'admin'
         && d.createdAt == request.time
         && d.createdBy == request.auth.uid;
+    }
+
+    // ---------------- Sites modelo (prévias) ----------------
+    match /previews/{id} {
+      // público abre só a prévia ativa, pelo id aleatório; nunca lista
+      allow get: if resource.data.active == true || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAdmin()
+        && validPreview(request.resource.data)
+        && request.resource.data.createdBy == 'admin'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin()
+        && validPreview(request.resource.data)
+        && request.resource.data.leadId == resource.data.leadId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      // só a exclusão completa do lead (LGPD) apaga; no dia a dia, desativa
+      allow delete: if isAdmin();
+    }
+
+    // Imagem embutida: data URL de webp, png ou jpeg (ou vazio)
+    function img(v, max) {
+      return v is string && v.size() <= max
+        && (v == '' || v.matches('^data:image/(webp|png|jpeg);base64,.+'));
+    }
+    function color(v) { return v is string && v.matches('^(#[0-9a-fA-F]{6})?$'); }
+
+    // Listas de textos curtos: as regras não têm laço, cada posição é conferida
+    function strAt(l, i, max) { return l.size() <= i || str(l[i], max); }
+    function list6(l, max) {
+      return l is list && l.size() <= 6
+        && strAt(l, 0, max) && strAt(l, 1, max) && strAt(l, 2, max)
+        && strAt(l, 3, max) && strAt(l, 4, max) && strAt(l, 5, max);
+    }
+    function strs4(l, o, max) {
+      return strAt(l, o, max) && strAt(l, o + 1, max) && strAt(l, o + 2, max) && strAt(l, o + 3, max);
+    }
+    function list8(l, max) { return l is list && l.size() <= 8 && strs4(l, 0, max) && strs4(l, 4, max); }
+    function list12(l, max) {
+      return l is list && l.size() <= 12 && strs4(l, 0, max) && strs4(l, 4, max) && strs4(l, 8, max);
+    }
+
+    // Produtos do catálogo: até 24, cada um conferido na sua posição
+    function validProduct(m) {
+      return m is map
+        && m.keys().hasOnly(['name', 'description', 'category', 'image'])
+        && str(m.name, 60) && m.name.size() >= 1
+        && (!('description' in m) || str(m.description, 160))
+        && (!('category' in m) || str(m.category, 40))
+        && (!('image' in m) || img(m.image, 30000));
+    }
+    function prodAt(l, i) { return l.size() <= i || validProduct(l[i]); }
+    function products8(l, o) {
+      return prodAt(l, o) && prodAt(l, o + 1) && prodAt(l, o + 2) && prodAt(l, o + 3)
+        && prodAt(l, o + 4) && prodAt(l, o + 5) && prodAt(l, o + 6) && prodAt(l, o + 7);
+    }
+    function validProducts(l) {
+      return l is list && l.size() <= 24 && products8(l, 0) && products8(l, 8) && products8(l, 16);
+    }
+
+    function validTexts(t) {
+      return t is map
+        && t.keys().hasOnly(['headline', 'subheadline', 'about', 'ctaPrimary', 'ctaSecondary',
+                             'contactTitle', 'contactText', 'catalogTitle', 'catalogText',
+                             'diferenciais', 'benefits'])
+        && (!('headline' in t) || str(t.headline, 120))
+        && (!('subheadline' in t) || str(t.subheadline, 240))
+        && (!('about' in t) || str(t.about, 900))
+        && (!('ctaPrimary' in t) || str(t.ctaPrimary, 40))
+        && (!('ctaSecondary' in t) || str(t.ctaSecondary, 40))
+        && (!('contactTitle' in t) || str(t.contactTitle, 80))
+        && (!('contactText' in t) || str(t.contactText, 240))
+        && (!('catalogTitle' in t) || str(t.catalogTitle, 80))
+        && (!('catalogText' in t) || str(t.catalogText, 240))
+        && (!('diferenciais' in t) || list6(t.diferenciais, 120))
+        && (!('benefits' in t) || list6(t.benefits, 120));
+    }
+
+    // Prévia é pública por link: nada interno do lead (contatos, cidade, notas, motivos)
+    function validPreview(d) {
+      return d.keys().hasOnly(['leadId', 'niche', 'template', 'format', 'formatReason',
+                               'companyName', 'tagline', 'mainService', 'services',
+                               'primaryColor', 'secondaryColor', 'logo', 'products', 'categories',
+                               'texts', 'active', 'createdBy', 'createdAt', 'updatedAt'])
+        && d.leadId is string && d.leadId.matches('^[A-Za-z0-9]{1,40}$')
+        && (!('niche' in d) || (d.niche is string && d.niche.matches('^([a-z0-9-]{2,60})?$')))
+        && d.template is string && d.template.matches('^[a-z0-9_-]{2,60}$')
+        && d.format in ['landing', 'institucional', 'catalogo']
+        && (!('formatReason' in d) || str(d.formatReason, 300))
+        && str(d.companyName, 120) && d.companyName.size() >= 2
+        && (!('tagline' in d) || str(d.tagline, 120))
+        && (!('mainService' in d) || str(d.mainService, 80))
+        && (!('services' in d) || list8(d.services, 60))
+        && (!('primaryColor' in d) || color(d.primaryColor))
+        && (!('secondaryColor' in d) || color(d.secondaryColor))
+        && (!('logo' in d) || img(d.logo, 200000))
+        && (!('products' in d) || validProducts(d.products))
+        && (!('categories' in d) || list12(d.categories, 40))
+        && (!('texts' in d) || validTexts(d.texts))
+        && d.active is bool
+        && d.createdBy in ['admin', 'cronus'];
+    }
+
+    function validKit(d) {
+      return d.keys().hasOnly(['logo', 'products', 'categories', 'updatedAt', 'updatedBy'])
+        && (!('logo' in d) || img(d.logo, 200000))
+        && (!('products' in d) || validProducts(d.products))
+        && (!('categories' in d) || list12(d.categories, 40))
+        && d.updatedAt == request.time
+        && d.updatedBy == 'admin';
+    }
+
+    function validBrand(m) {
+      return m is map
+        && m.keys().hasOnly(['primaryColor', 'secondaryColor', 'tagline', 'mainService', 'services'])
+        && (!('primaryColor' in m) || color(m.primaryColor))
+        && (!('secondaryColor' in m) || color(m.secondaryColor))
+        && (!('tagline' in m) || str(m.tagline, 120))
+        && (!('mainService' in m) || str(m.mainService, 80))
+        && (!('services' in m) || list8(m.services, 60));
     }
 
     // ---------------- Rodadas de prospecção ----------------
@@ -130,6 +254,13 @@ service cloud.firestore {
         && validCrmFields(request.resource.data);
       allow delete: if isAdmin();
 
+      // Kit da marca (logo e produtos): documento único 'marca'. Apagado só na exclusão completa.
+      match /kit/{docId} {
+        allow get, list: if isAdmin();
+        allow create, update: if isAdmin() && docId == 'marca' && validKit(request.resource.data);
+        allow delete: if isAdmin();
+      }
+
       // Histórico: ninguém edita. O admin apaga só junto com o lead (exclusão completa, LGPD).
       match /interacoes/{iid} {
         allow get, list: if isAdmin();
@@ -184,7 +315,8 @@ service cloud.firestore {
         'legalName', 'googleMapsUrl', 'facebook', 'address', 'otherLinks', 'sources',
         'channel', 'fitReason', 'draft', 'previewId', 'batchId', 'owner',
         'nextStep', 'meetingAt', 'lostReason',
-        'prospectState', 'drafts', 'discardReason'
+        'prospectState', 'drafts', 'discardReason',
+        'qualification', 'disqualifyReason', 'format', 'formatReason', 'brand'
       ];
     }
 
@@ -245,6 +377,11 @@ service cloud.firestore {
         && (!('lostReason' in d) || str(d.lostReason, 300))
         && (!('prospectState' in d) || d.prospectState in ['pendente', 'aprovado', 'descartado'])
         && (!('discardReason' in d) || str(d.discardReason, 300))
+        && (!('qualification' in d) || d.qualification in ['', 'qualificado', 'desqualificado'])
+        && (!('disqualifyReason' in d) || str(d.disqualifyReason, 300))
+        && (!('format' in d) || d.format in ['', 'landing', 'institucional', 'catalogo'])
+        && (!('formatReason' in d) || str(d.formatReason, 300))
+        && (!('brand' in d) || validBrand(d.brand))
         && (!('drafts' in d) || (d.drafts is map
             && d.drafts.keys().hasOnly(['whatsapp', 'instagram', 'email'])
             && (!('whatsapp' in d.drafts) || str(d.drafts.whatsapp, 2000))
@@ -283,7 +420,8 @@ service cloud.firestore {
 
     function validDraft(m) {
       return m is map
-        && m.keys().hasOnly(['channel', 'text', 'approved', 'approvedAt', 'sentAt'])
+        && m.keys().hasOnly(['channel', 'text', 'approved', 'approvedAt', 'sentAt', 'previewId'])
+        && (!('previewId' in m) || (m.previewId is string && m.previewId.matches('^[A-Za-z0-9]{0,40}$')))
         && (!('channel' in m) || m.channel in ['', 'whatsapp', 'instagram', 'email'])
         && (!('text' in m) || str(m.text, 2000))
         && (!('approved' in m) || m.approved is bool)

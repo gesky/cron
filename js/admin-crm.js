@@ -97,7 +97,7 @@
 
     { g: 'Prospecção', k: 'origin', label: 'Origem', type: 'select', opts: [['site', 'Site'], ['cronus', 'CronUS'], ['indicacao', 'Indicação'], ['manual', 'Manual']], noCreate: 1 },
     { g: 'Prospecção', k: 'owner', label: 'Responsável', type: 'text', max: 40, ph: 'pedro' },
-    { g: 'Prospecção', k: 'previewId', label: 'Site modelo (id)', type: 'id' },
+    { g: 'Prospecção', k: 'previewId', label: 'Site modelo atual (id)', type: 'ro' },
     { g: 'Prospecção', k: 'batchId', label: 'Rodada de prospecção', type: 'ro' },
     { g: 'Prospecção', k: 'createdBy', label: 'Criado por', type: 'ro' }
   ];
@@ -313,7 +313,8 @@
       if (F.quick === 'aprovar' && !needsApproval(l)) return false;
       if (!q) return true;
       var hay = [l.company, l.name, l.legalName, l.whatsapp, l.phone, l.instagram, l.email, l.companyEmail, l.niche, l.message,
-        l.cnpjEmail, l.cnpjPhone, l.linkedin, l.companyLinkedin, l.facebook, l.address, l.currentSite]
+        l.cnpjEmail, l.cnpjPhone, l.linkedin, l.companyLinkedin, l.facebook, l.address, l.currentSite,
+        l.disqualifyReason, l.formatReason, l.brand ? l.brand.tagline : '', l.brand ? l.brand.mainService : '']
         .join(' ').toLowerCase().replace(/[()\-\s@]/g, '');
       return hay.indexOf(q) !== -1;
     }).sort(function (a, b) {
@@ -659,6 +660,9 @@
     }
     renderDraftState(l);
 
+    // Qualificação, marca, kit e site modelo
+    if (A.previews) A.previews.mount($('#ldModelo'), l.id);
+
     // Campos
     if (!dirty.form) renderFields(l, false);
 
@@ -710,7 +714,8 @@
 
   function renderActions(l) {
     var dr = l.draft || {};
-    var text = dr.approved ? dr.text : '';
+    var link = function (t) { return A.previews ? A.previews.resolveLink(t, dr.previewId || l.previewId) : t; };
+    var text = dr.approved ? link(dr.text) : '';
     var html = '';
     var wa = waLink(l.whatsapp, text);
     if (wa) html += '<a class="btn btn--lime" href="' + esc(wa) + '" target="_blank" rel="noopener noreferrer">' + ICONS.wa + 'Abrir WhatsApp</a>';
@@ -721,7 +726,7 @@
     if (em) html += '<a class="btn btn--ghost" href="mailto:' + esc(em) + '?subject=' + encodeURIComponent('Cron Web Studio') + (text && dr.channel === 'email' ? '&body=' + encodeURIComponent(text) : '') + '">' + ICONS.mail + 'E-mail</a>';
     var tel = telLink(l.phone) || telLink(l.whatsapp);
     if (tel) html += '<a class="btn btn--ghost" href="' + esc(tel) + '">' + ICONS.tel + 'Ligar</a>';
-    if (l.previewId && /^[A-Za-z0-9]{1,40}$/.test(l.previewId)) html += '<a class="btn btn--ghost" href="modelo/?id=' + esc(l.previewId) + '" target="_blank" rel="noopener">' + ICONS.preview + 'Site modelo</a>';
+    if (l.previewId && /^[A-Za-z0-9]{1,40}$/.test(l.previewId) && A.previews) html += '<a class="btn btn--ghost" href="' + esc(A.previews.previewUrl(l.previewId)) + '" target="_blank" rel="noopener">' + ICONS.preview + 'Abrir prévia</a>';
     $('#ldActions').innerHTML = html || '<p class="muted">Sem contato cadastrado. Preencha WhatsApp, Instagram ou e-mail abaixo.</p>';
   }
 
@@ -729,6 +734,7 @@
     if (!e.target.closest('[data-copy-draft]')) return;
     var l = find(openId);
     var t = $('#ldDraftText').value.trim() || (l && l.draft && l.draft.text) || '';
+    if (A.previews && l) t = A.previews.resolveLink(t, (l.draft && l.draft.previewId) || l.previewId);
     copy(t).then(function () { toast('Mensagem copiada'); }, function () { toast('Não foi possível copiar.', true); });
   });
 
@@ -820,8 +826,12 @@
   $('#ldDraftApprove').addEventListener('click', function () {
     var l = find(openId), t = draftText();
     if (!l || !t) return;
-    api.updateLead(l.id, { 'draft.text': t, 'draft.channel': draftChannel, 'draft.approved': true, 'draft.approvedAt': api.now() })
-      .then(function () { refill('draft'); toast('Mensagem aprovada'); })
+    var data = { 'draft.text': t, 'draft.channel': draftChannel, 'draft.approved': true, 'draft.approvedAt': api.now() };
+    var pid = l.previewId && /^[A-Za-z0-9]{1,40}$/.test(l.previewId) ? l.previewId : '';
+    if (pid) data['draft.previewId'] = pid;
+    (pid && A.previews ? A.previews.activate([pid]) : Promise.resolve())
+      .then(function () { return api.updateLead(l.id, data); })
+      .then(function () { refill('draft'); toast(pid ? 'Mensagem e site modelo aprovados' : 'Mensagem aprovada'); })
       .catch(saveErr);
   });
   $('#ldDraftSent').addEventListener('click', function () {
@@ -1046,7 +1056,7 @@
   $('#ldDelete').addEventListener('click', function () {
     var l = find(openId);
     if (!l) return;
-    confirmBox('Excluir este lead?', 'Os dados de ' + title(l) + ' serão apagados de vez. Use também quando a pessoa pedir exclusão pela LGPD.')
+    confirmBox('Excluir este lead?', 'Os dados de ' + title(l) + ' serão apagados de vez: histórico, kit da marca e sites modelo. Use também quando a pessoa pedir exclusão pela LGPD.')
       .then(function (ok) {
         if (!ok) return;
         var id = openId;
@@ -1086,6 +1096,15 @@
       ['Próximo passo', function (l) { return l.nextStep ? l.nextStep.text : ''; }],
       ['Prazo', function (l) { return l.nextStep ? dt(l.nextStep.dueAt) : ''; }],
       ['Reunião', function (l) { return dt(l.meetingAt); }], ['Motivo de perda', 'lostReason'],
+      ['Qualificação', function (l) { return { qualificado: 'Qualificado', desqualificado: 'Desqualificado' }[l.qualification] || ''; }],
+      ['Motivo da desqualificação', 'disqualifyReason'],
+      ['Formato', function (l) { return { landing: 'Landing', institucional: 'Institucional', catalogo: 'Catálogo' }[l.format] || ''; }],
+      ['Motivo do formato', 'formatReason'],
+      ['Cor principal', function (l) { return l.brand ? l.brand.primaryColor : ''; }],
+      ['Cor secundária', function (l) { return l.brand ? l.brand.secondaryColor : ''; }],
+      ['Slogan', function (l) { return l.brand ? l.brand.tagline : ''; }],
+      ['Serviço principal', function (l) { return l.brand ? l.brand.mainService : ''; }],
+      ['Serviços', function (l) { return l.brand && l.brand.services ? l.brand.services.join('; ') : ''; }],
       ['Responsável', 'owner'], ['Rodada', 'batchId'], ['Site modelo', 'previewId'],
       ['Outros links', function (l) { return (l.otherLinks || []).join(' '); }],
       ['Anotações', 'notes'],

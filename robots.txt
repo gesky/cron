@@ -1,5 +1,7 @@
 # Cron Web Studio
 User-agent: *
 Allow: /
+# Rascunhos de site enviados a clientes (links privados)
+Disallow: /modelo/
 
 Sitemap: https://cronwebstudio.com.br/sitemap.xml

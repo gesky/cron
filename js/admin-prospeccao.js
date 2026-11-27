@@ -27,7 +27,7 @@
 
   // ---------- Estado ----------
   var rodadas = [], leads = [];
-  var pview = 'rodadas', current = null, pstate = 'pendente', showArchived = false;
+  var pview = 'rodadas', current = null, pstate = 'pendente', showArchived = false, qfilter = '';
   var selected = {};       // id -> true
   var edits = {};          // id -> { ch, texts: { whatsapp: '...' } }
   var pendingRender = false;
@@ -121,7 +121,7 @@
   var tab = $('#tab-prospect');
   function typing() {
     var el = document.activeElement;
-    return el && tab.contains(el) && el.tagName === 'TEXTAREA';
+    return el && tab.contains(el) && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type === 'text') || (el.tagName === 'INPUT' && !el.type));
   }
   function scheduleRender() {
     if (typing()) { pendingRender = true; updateBadges(); return; }
@@ -161,6 +161,7 @@
     }
     if (pview === 'fila') renderQueue();
     renderBulk();
+    if (A.previews) A.previews.paint(tab);
   }
 
   // ---------- Lista de rodadas ----------
@@ -226,7 +227,17 @@
     $('#cApr').textContent = n.aprovado;
     $('#cDesc').textContent = n.descartado;
     $$('#prStateSw [data-pstate]').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.pstate === pstate ? 'true' : 'false'); });
-    var rows = cands.filter(function (l) { return stateOf(l) === pstate; });
+    var inState = cands.filter(function (l) { return stateOf(l) === pstate; });
+    var qn = { '': inState.length, qualificado: 0, desqualificado: 0, sem: 0 };
+    inState.forEach(function (l) { qn[l.qualification === 'qualificado' ? 'qualificado' : l.qualification === 'desqualificado' ? 'desqualificado' : 'sem']++; });
+    $('#prQual').innerHTML = [['', 'Todos'], ['qualificado', 'Qualificados'], ['desqualificado', 'Desqualificados'], ['sem', 'Sem avaliação']].map(function (q) {
+      return '<button type="button" class="stage-chip' + (qfilter === q[0] ? ' is-active' : '') + '" data-qf="' + q[0] + '" aria-pressed="' + (qfilter === q[0]) + '">' + q[1] + ' <b>' + qn[q[0]] + '</b></button>';
+    }).join('');
+    var rows = inState.filter(function (l) {
+      if (!qfilter) return true;
+      if (qfilter === 'sem') return l.qualification !== 'qualificado' && l.qualification !== 'desqualificado';
+      return l.qualification === qfilter;
+    });
     $('#prSelAllWrap').hidden = pstate !== 'pendente' || !rows.length;
     $('#prSelAll').checked = rows.length > 0 && rows.every(function (l) { return selected[l.id]; });
     $('#prCards').innerHTML = rows.length ? rows.map(function (l) { return cardHtml(l, 'rodada'); }).join('')
@@ -276,14 +287,13 @@
     } else if (st === 'descartado') {
       actions = '<button class="btn btn--ghost" type="button" data-restore="' + esc(l.id) + '">Voltar para pendentes</button>';
     }
-    if (l.previewId && /^[A-Za-z0-9]{1,40}$/.test(l.previewId)) actions += '<a class="btn btn--ghost" href="modelo/?id=' + esc(l.previewId) + '" target="_blank" rel="noopener">Site modelo</a>';
 
     var selectable = st === 'pendente' || crm;
     return '<article class="pc' + (selected[l.id] ? ' is-selected' : '') + '" data-id="' + esc(l.id) + '">' +
       (selectable ? '<label class="pc__sel"><input type="checkbox" data-sel="' + esc(l.id) + '"' + (selected[l.id] ? ' checked' : '') + '><span class="sr-only">Selecionar ' + esc(title(l)) + '</span></label>' : '') +
       '<div class="pc__body">' +
         (origin ? '<p class="top__eyebrow pc__origin">' + esc(origin) + '</p>' : '') +
-        '<div class="pc__head"><div><h3>' + esc(title(l)) + '</h3>' + (sub ? '<p class="muted">' + esc(sub) + '</p>' : '') + '</div>' +
+        '<div class="pc__head"><div><h3>' + esc(title(l)) + (A.previews ? ' ' + A.previews.qualBadge(l) : '') + '</h3>' + (sub ? '<p class="muted">' + esc(sub) + '</p>' : '') + '</div>' +
           (l.channel && CHANNELS[l.channel] ? '<span class="pc__rec">Recomendado: ' + CHANNELS[l.channel] + '</span>' : '') + '</div>' +
         (facts.length ? '<div class="pc__facts">' + facts.join('') + '</div>' : '') +
         (l.siteReason || site ? '<p class="pc__site">' + (site ? '<a href="' + esc(site) + '" target="_blank" rel="noopener noreferrer">' + esc(host(site)) + '</a>' : '') + (l.siteReason ? (site ? ' · ' : '') + esc(l.siteReason) : '') + '</p>' : '') +
@@ -291,6 +301,7 @@
           : '<p class="pc__chans muted">Nenhum contato encontrado.</p>') +
         (l.fitReason ? '<p class="pc__fit"><strong>Por que encaixa:</strong> ' + esc(l.fitReason) + '</p>' : '') +
         (st === 'descartado' && l.discardReason ? '<p class="pc__fit"><strong>Motivo do descarte:</strong> ' + esc(l.discardReason) + '</p>' : '') +
+        (A.previews && (st === 'pendente' || crm || st === 'aprovado') ? A.previews.cardHtml(l) : '') +
         msg +
         '<div class="pc__actions">' + actions + '</div>' +
       '</div>' +
@@ -328,7 +339,17 @@
   // Aprovar candidato: vai para o CRM com a mensagem da tela já aprovada (nada é enviado).
   // Aprovar lead do CRM: só aprova a mensagem.
   function approve(list) {
-    var items = [], skipped = 0;
+    var dq = list.filter(function (l) { return l.qualification === 'desqualificado'; });
+    if (dq.length) {
+      var txt = dq.length === 1
+        ? 'Este lead foi marcado como desqualificado: ' + (dq[0].disqualifyReason || 'sem motivo') + '. Aprovar mesmo assim?'
+        : dq.length + ' itens foram marcados como desqualificados (' + dq.map(function (l) { return title(l) + ': ' + (l.disqualifyReason || 'sem motivo'); }).join('; ') + '). Aprovar mesmo assim?';
+      return confirmBox('Aprovar lead desqualificado?', txt, 'Aprovar mesmo assim').then(function (ok) { if (ok) return doApprove(list); render(); });
+    }
+    return doApprove(list);
+  }
+  function doApprove(list) {
+    var items = [], skipped = 0, pids = [];
     list.forEach(function (l) {
       var ch = channelFor(l), text = (textFor(l, ch) || '').trim().slice(0, 2000);
       if (isPending(l)) {
@@ -338,18 +359,23 @@
         if (text) {
           data.draft = { channel: ch, text: text, approved: true, approvedAt: api.now() };
           data['drafts.' + ch] = text;
+          if (validPid(l.previewId)) { data.draft.previewId = l.previewId; pids.push(l.previewId); }
         }
         if (stageOf(l) !== to) inters.push({ type: 'mudanca_etapa', from: stageOf(l), to: to });
         items.push({ id: l.id, data: data, inters: inters });
       } else if (crmNeedsApproval(l)) {
         if (!text) { skipped++; return; }
-        items.push({ id: l.id, data: { 'draft.text': text, 'draft.channel': ch, 'draft.approved': true, 'draft.approvedAt': api.now() }, inters: [] });
+        var d2 = { 'draft.text': text, 'draft.channel': ch, 'draft.approved': true, 'draft.approvedAt': api.now() };
+        if (validPid(l.previewId)) { d2['draft.previewId'] = l.previewId; pids.push(l.previewId); }
+        items.push({ id: l.id, data: d2, inters: [] });
       }
     });
     if (!items.length) { toast(skipped ? 'Escreva a mensagem antes de aprovar.' : 'Nada para aprovar.', true); return Promise.resolve(); }
-    return api.updateLeads(items).then(function () {
+    var act = pids.length && A.previews ? A.previews.activate(pids) : Promise.resolve();
+    return act.then(function () { return api.updateLeads(items); }).then(function () {
       items.forEach(function (it) { delete selected[it.id]; delete edits[it.id]; });
-      toast(items.length === 1 ? 'Aprovado' : items.length + ' aprovados' + (skipped ? '. ' + skipped + ' sem mensagem ficaram de fora.' : ''));
+      var what = pids.length ? (items.length === 1 ? 'Mensagem e site modelo aprovados' : items.length + ' aprovados, com mensagem e site modelo') : (items.length === 1 ? 'Aprovado' : items.length + ' aprovados');
+      toast(what + (skipped ? '. ' + skipped + ' sem mensagem ficaram de fora.' : '') + '. Nada foi enviado.');
       render();
     }).catch(saveErr);
   }
@@ -374,14 +400,17 @@
       });
   }
 
+  function validPid(id) { return /^[A-Za-z0-9]{1,40}$/.test(id || ''); }
+
   function findLead(id) { return leads.find(function (l) { return l.id === id; }); }
 
   tab.addEventListener('click', function (e) {
     var t = e.target;
     var b;
     if ((b = t.closest('[data-pview]'))) { pview = b.dataset.pview; current = null; selected = {}; render(); return; }
-    if ((b = t.closest('[data-rodada]'))) { current = b.dataset.rodada; pstate = 'pendente'; selected = {}; render(); window.scrollTo(0, 0); return; }
+    if ((b = t.closest('[data-rodada]'))) { current = b.dataset.rodada; pstate = 'pendente'; qfilter = ''; selected = {}; render(); window.scrollTo(0, 0); return; }
     if ((b = t.closest('[data-pstate]'))) { pstate = b.dataset.pstate; selected = {}; render(); return; }
+    if ((b = t.closest('[data-qf]'))) { qfilter = b.dataset.qf; selected = {}; render(); return; }
     if ((b = t.closest('[data-ch]'))) {
       var l0 = findLead(b.dataset.for);
       if (!l0) return;
