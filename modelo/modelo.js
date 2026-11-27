@@ -103,8 +103,14 @@
     var format = ['landing', 'institucional', 'catalogo'].indexOf(p.format) !== -1 ? p.format : 'institucional';
     var company = str(p.companyName, 120) || 'Sua empresa';
     var services = list(p.services, 8, 60);
-    var mainService = str(p.mainService, 80) || services[0] || '';
-    var vars = { empresa: company, servicoPrincipal: mainService || 'serviços sob medida', servicos: joinNice(services) || mainService };
+    // Opções do template (o _base não usa nenhuma): mainFromServices false não usa o primeiro
+    // serviço como principal; mainFallback troca o "serviços sob medida"; lowerMain põe a
+    // primeira letra em minúscula no meio da frase (só se a segunda já for minúscula, para não
+    // estragar siglas como "CNC").
+    var opt = (def && def.options) || {};
+    var mainService = str(p.mainService, 80) || (opt.mainFromServices === false ? '' : services[0]) || '';
+    var mainVar = mainService && opt.lowerMain && /^.[a-zà-ÿ]/.test(mainService) ? mainService.charAt(0).toLowerCase() + mainService.slice(1) : mainService;
+    var vars = { empresa: company, servicoPrincipal: mainVar || opt.mainFallback || 'serviços sob medida', servicos: joinNice(services) || mainService };
     var tx = p.texts && typeof p.texts === 'object' ? p.texts : {};
     var dT = (def && def.defaults && def.defaults[format]) || {};
     var dB = (base && base.defaults && base.defaults[format]) || {};

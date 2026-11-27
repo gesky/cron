@@ -609,15 +609,16 @@
       </header>
       <form class="drawer__body pv-form" id="previewForm" novalidate>
         <div class="grid2">
+          <label class="f"><span>Modelo</span><select name="template"><option value="_base">Base</option></select></label>
           <label class="f"><span>Formato</span><select name="format"><option value="landing">Landing</option><option value="institucional">Institucional</option><option value="catalogo">Catálogo</option></select></label>
-          <label class="f"><span>Por que esse formato</span><input name="formatReason" maxlength="300"></label>
         </div>
+        <label class="f"><span>Por que esse formato</span><input name="formatReason" maxlength="300"></label>
         <div class="grid2">
           <label class="f"><span>Nome da empresa</span><input name="companyName" maxlength="120" required></label>
           <label class="f"><span>Slogan</span><input name="tagline" maxlength="120"></label>
         </div>
-        <label class="f"><span>Serviço principal</span><input name="mainService" maxlength="80"></label>
-        <label class="f"><span>Serviços (um por linha, até 8)</span><textarea name="services" rows="4"></textarea></label>
+        <label class="f"><span data-pv-label="mainService">Serviço principal</span><input name="mainService" maxlength="80"></label>
+        <label class="f"><span data-pv-label="services">Serviços (um por linha, até 8)</span><textarea name="services" rows="4"></textarea></label>
         <div class="grid2">
           <label class="f mp-color"><span>Cor principal</span><span class="fld"><input type="color" name="primaryPick" aria-label="Cor principal (seletor)"><input name="primaryColor" maxlength="7" placeholder="#rrggbb" aria-label="Cor principal (código)"></span></label>
           <label class="f mp-color"><span>Cor secundária</span><span class="fld"><input type="color" name="secondaryPick" aria-label="Cor secundária (seletor)"><input name="secondaryColor" maxlength="7" placeholder="#rrggbb" aria-label="Cor secundária (código)"></span></label>
@@ -635,8 +636,8 @@
               <label class="f"><span>Botão principal <button class="btn-text" type="button" data-restore="t_ctaPrimary">Restaurar</button></span><input name="t_ctaPrimary" maxlength="40"></label>
               <label class="f"><span>Botão secundário <button class="btn-text" type="button" data-restore="t_ctaSecondary">Restaurar</button></span><input name="t_ctaSecondary" maxlength="40"></label>
             </div>
-            <label class="f"><span>Diferenciais (um por linha, até 6) <button class="btn-text" type="button" data-restore="t_diferenciais">Restaurar padrão</button></span><textarea name="t_diferenciais" rows="4"></textarea></label>
-            <label class="f"><span>Benefícios da landing (um por linha, até 6) <button class="btn-text" type="button" data-restore="t_benefits">Restaurar padrão</button></span><textarea name="t_benefits" rows="4"></textarea></label>
+            <label class="f"><span><span data-pv-label="diferenciais">Diferenciais (um por linha, até 6)</span> <button class="btn-text" type="button" data-restore="t_diferenciais">Restaurar padrão</button></span><textarea name="t_diferenciais" rows="4"></textarea></label>
+            <label class="f"><span><span data-pv-label="benefits">Benefícios da landing (um por linha, até 6)</span> <button class="btn-text" type="button" data-restore="t_benefits">Restaurar padrão</button></span><textarea name="t_benefits" rows="4"></textarea></label>
             <label class="f"><span>Título do contato <button class="btn-text" type="button" data-restore="t_contactTitle">Restaurar padrão</button></span><input name="t_contactTitle" maxlength="80"></label>
             <label class="f"><span>Texto do contato <button class="btn-text" type="button" data-restore="t_contactText">Restaurar padrão</button></span><textarea name="t_contactText" maxlength="240" rows="2"></textarea></label>
             <label class="f pv-cat"><span>Título do catálogo <button class="btn-text" type="button" data-restore="t_catalogTitle">Restaurar padrão</button></span><input name="t_catalogTitle" maxlength="80"></label>
@@ -702,6 +703,7 @@
   <script src="js/firebase-config.js"></script>
   <script src="modelo/templates/registry.js"></script>
   <script src="modelo/templates/_base/template.js"></script>
+  <script src="modelo/templates/industria/template.js"></script>
   <script src="modelo/demo-data.js"></script>
   <script src="modelo/produtos.js"></script>
   <script src="js/admin.js"></script>

@@ -23,6 +23,8 @@
 .mp-controls .btn, .mp-controls .btn-text { min-height: 44px; }
 .mp-controls .btn-text[disabled], .mp-controls .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .mp-why { font-size: .8rem; color: var(--ink-50); }
+.mp-tpl { font-size: .8rem; color: var(--ink-70); margin: 0 0 8px; }
+.mp-tpl strong { color: var(--ink); font-weight: 600; }
 
 .mp-brand .row-end, .mp-kit .row-end { margin-top: 12px; }
 .mp-color .fld { align-items: center; }

@@ -16,6 +16,13 @@
   var SITE = 'https://cronwebstudio.com.br';
   var ALLOWED = window.CRON_MODELO_TEMPLATES || ['_base'];
   var DEFS = (window.CRON_MODELO && window.CRON_MODELO.defs) || {};
+  var TPL_NAMES = window.CRON_MODELO_TEMPLATE_NAMES || { _base: 'Base' };
+  // Template pelo nicho do lead (nome exato, prefixo ou _base); sempre um nome da lista
+  var templateFor = function (niche) {
+    var t = window.CRON_MODELO_TEMPLATE_FOR ? window.CRON_MODELO_TEMPLATE_FOR(niche) : '_base';
+    return ALLOWED.indexOf(t) !== -1 ? t : '_base';
+  };
+  function tplName(t) { return TPL_NAMES[t] || t; }
   var FORMATS = { landing: 'Landing', institucional: 'Institucional', catalogo: 'Catálogo' };
   var QUAL = { qualificado: 'Qualificado', desqualificado: 'Desqualificado', '': 'Sem avaliação' };
   var HEX = /^#[0-9a-fA-F]{6}$/;
@@ -117,7 +124,8 @@
   function controlsHtml(l, ctx) {
     var why = blockReason(l), id = 'mpwhy-' + esc(l.id) + '-' + ctx;
     var has = l.previewId && /^[A-Za-z0-9]{1,40}$/.test(l.previewId);
-    var html = '<div class="mp-controls">';
+    // qual template o botão Gerar vai usar (só informação, nada é gravado no lead)
+    var html = '<p class="mp-tpl">Modelo ao gerar: <strong>' + esc(tplName(templateFor(l.niche))) + '</strong></p><div class="mp-controls">';
     if (has) {
       html += '<a class="btn btn--ghost" href="' + esc(previewUrl(l.previewId)) + '" target="_blank" rel="noopener">Abrir prévia</a>' +
         '<button class="btn btn--ghost" type="button" data-mp="copy" data-lead="' + esc(l.id) + '">Copiar link</button>' +
@@ -182,6 +190,7 @@
     if (!l) { m.el.innerHTML = ''; return; }
     if (!force && (m.dirty || typingIn(m.el))) return;
     var b = l.brand || {};
+    var lbl = LABELS[templateFor(l.niche)] || LABELS._base;
     var html = '<div class="mp-panel">';
     html += '<div class="mp-row"><span class="mp-label">Qualificação</span>' + segQual(l) + '</div>';
     if (l.qualification === 'desqualificado') {
@@ -194,8 +203,8 @@
     html += '<fieldset class="ld-group mp-brand"><legend>Marca</legend><div class="ld-grid">' +
       colorField('primaryColor', 'Cor principal', b.primaryColor) + colorField('secondaryColor', 'Cor secundária', b.secondaryColor) +
       '<label class="f f--full"><span>Slogan</span><input data-mp-field="tagline" maxlength="120" value="' + esc(b.tagline || '') + '"></label>' +
-      '<label class="f f--full"><span>Serviço principal</span><input data-mp-field="mainService" maxlength="80" value="' + esc(b.mainService || '') + '" placeholder="Usado na landing e no texto padrão"></label>' +
-      '<label class="f f--full"><span>Serviços (um por linha, até 8)</span><textarea data-mp-field="services" rows="4">' + esc((b.services || []).join('\n')) + '</textarea></label>' +
+      '<label class="f f--full"><span>' + esc(lbl.mainService) + '</span><input data-mp-field="mainService" maxlength="80" value="' + esc(b.mainService || '') + '" placeholder="Usado na landing e no texto padrão"></label>' +
+      '<label class="f f--full"><span>' + esc(lbl.services) + '</span><textarea data-mp-field="services" rows="4">' + esc((b.services || []).join('\n')) + '</textarea></label>' +
       '</div><div class="row-end"><button class="btn btn--dark" type="button" data-mp="saveBrand" data-lead="' + esc(l.id) + '">Salvar marca</button></div></fieldset>';
 
     // Kit
@@ -414,7 +423,7 @@
     var cat = l.format === 'catalogo';
     // Documento público: nada de id do lead, nicho ou motivo (vão para o índice privado)
     var d = {
-      template: ALLOWED.indexOf(l.niche) !== -1 ? l.niche : '_base',
+      template: templateFor(l.niche),
       format: l.format,
       companyName: String(l.company || '').trim().slice(0, 120),
       tagline: String(b.tagline || '').slice(0, 120),
@@ -476,15 +485,34 @@
   // ---------- Editor da prévia ----------
   var pvDrawer = $('#previewDrawer'), pvForm = $('#previewForm'), pvCurrent = null, pvLeadId = null;
 
-  function defaultsFor(fmt) {
+  // Textos padrão do template escolhido, campo a campo, com o _base como reserva
+  function defaultsFor(fmt, tpl) {
     var base = (DEFS._base && DEFS._base.defaults && DEFS._base.defaults[fmt]) || {};
-    return base;
+    var own = (tpl && tpl !== '_base' && DEFS[tpl] && DEFS[tpl].defaults && DEFS[tpl].defaults[fmt]) || {};
+    var out = {};
+    Object.keys(base).concat(Object.keys(own)).forEach(function (k) { out[k] = own[k] != null ? own[k] : base[k]; });
+    return out;
   }
-  function fillMarkers(text, p) {
+  // Mesma troca de marcadores da página modelo/ (inclusive as opções do template)
+  function fillMarkers(text, p, tpl) {
+    var opt = (tpl && DEFS[tpl] && DEFS[tpl].options) || {};
     var services = p.services || [];
     var joined = services.length > 1 ? services.slice(0, -1).join(', ') + ' e ' + services[services.length - 1] : (services[0] || '');
-    return String(text || '').replace(/\{empresa\}/g, p.companyName || '').replace(/\{servicoPrincipal\}/g, p.mainService || services[0] || 'serviços sob medida')
-      .replace(/\{servicos\}/g, joined || p.mainService || '').replace(/\s{2,}/g, ' ');
+    var main = p.mainService || (opt.mainFromServices === false ? '' : services[0]) || '';
+    var mainVar = main && opt.lowerMain && /^.[a-zà-ÿ]/.test(main) ? main.charAt(0).toLowerCase() + main.slice(1) : main;
+    var out = String(text || '').replace(/\{empresa\}/g, p.companyName || '').replace(/\{servicoPrincipal\}/g, mainVar || opt.mainFallback || 'serviços sob medida')
+      .replace(/\{servicos\}/g, joined || main || '').replace(/\s{2,}/g, ' ').trim();
+    return out.charAt(0).toUpperCase() + out.slice(1);
+  }
+  // Rótulos do editor mudam com o template (no industria, serviços são aplicações etc.)
+  var LABELS = {
+    _base: { services: 'Serviços (um por linha, até 8)', diferenciais: 'Diferenciais (um por linha, até 6)', benefits: 'Benefícios da landing (um por linha, até 6)', mainService: 'Serviço principal' },
+    industria: { services: 'Aplicações e segmentos atendidos (um por linha, até 8)', diferenciais: 'Diferenciais de fabricação (um por linha, até 6)', benefits: 'Passos de "Como pedir orçamento" (um por linha, até 6)', mainService: 'Linha principal de produtos' }
+  };
+  function fillTemplateSelect(current) {
+    var sel = pvForm.template;
+    sel.innerHTML = ALLOWED.map(function (t) { return '<option value="' + esc(t) + '">' + esc(tplName(t)) + '</option>'; }).join('');
+    sel.value = ALLOWED.indexOf(current) !== -1 ? current : '_base';
   }
 
   function openEditor(l) {
@@ -497,6 +525,7 @@
       $('#pvMsg').textContent = '';
       $('#pvTitle').textContent = 'Editar prévia · ' + (p.companyName || '');
       pvForm.format.value = p.format;
+      fillTemplateSelect(p.template);
       pvForm.formatReason.value = l.formatReason || '';
       pvForm.companyName.value = p.companyName || '';
       pvForm.tagline.value = p.tagline || '';
@@ -523,10 +552,13 @@
     };
   }
   function refreshPlaceholders() {
-    var d = defaultsFor(pvForm.format.value || 'institucional'), snap = formSnapshot();
-    TEXT_FIELDS.forEach(function (f) { pvForm['t_' + f[0]].placeholder = fillMarkers(d[f[0]] || '', snap); });
-    pvForm.t_diferenciais.placeholder = (d.diferenciais || []).map(function (x) { return fillMarkers(x, snap); }).join('\n');
-    pvForm.t_benefits.placeholder = (d.benefits || []).map(function (x) { return fillMarkers(x, snap); }).join('\n');
+    var tpl = pvForm.template.value || '_base';
+    var d = defaultsFor(pvForm.format.value || 'institucional', tpl), snap = formSnapshot();
+    TEXT_FIELDS.forEach(function (f) { pvForm['t_' + f[0]].placeholder = fillMarkers(d[f[0]] || '', snap, tpl); });
+    pvForm.t_diferenciais.placeholder = (d.diferenciais || []).map(function (x) { return fillMarkers(x, snap, tpl); }).join('\n');
+    pvForm.t_benefits.placeholder = (d.benefits || []).map(function (x) { return fillMarkers(x, snap, tpl); }).join('\n');
+    var lb = LABELS[tpl] || LABELS._base;
+    $$('[data-pv-label]', pvForm).forEach(function (el) { var k = el.getAttribute('data-pv-label'); if (lb[k]) el.textContent = lb[k]; });
     $$('.pv-cat', pvForm).forEach(function (el) { el.hidden = pvForm.format.value !== 'catalogo'; });
   }
   if (pvForm) {
@@ -536,6 +568,7 @@
       if (/^(companyName|mainService|services)$/.test(e.target.name)) refreshPlaceholders();
     });
     pvForm.format.addEventListener('change', refreshPlaceholders);
+    pvForm.template.addEventListener('change', refreshPlaceholders);
     pvForm.addEventListener('click', function (e) {
       var r = e.target.closest('[data-restore]');
       if (r) { e.preventDefault(); var f = pvForm[r.getAttribute('data-restore')]; if (f) { f.value = ''; f.focus(); } return; }
@@ -565,7 +598,9 @@
       if (dif.length) texts.diferenciais = dif;
       if (ben.length) texts.benefits = ben;
       var fmt = pvForm.format.value;
+      var tplSel = pvForm.template.value;
       var data = {
+        template: ALLOWED.indexOf(tplSel) !== -1 ? tplSel : '_base',
         format: fmt, companyName: name.slice(0, 120),
         tagline: pvForm.tagline.value.trim().slice(0, 120), mainService: pvForm.mainService.value.trim().slice(0, 80),
         services: services, texts: texts,
