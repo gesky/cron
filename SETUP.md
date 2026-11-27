@@ -273,6 +273,149 @@ Para cada lead qualificado, o painel gera com um clique um rascunho de site: o t
 
 1. **Qualificação** (cartão da Prospecção ou gaveta do lead): Qualificado, Desqualificado (pede o motivo) ou Sem avaliação. Desqualificado não ganha prévia. Dá para aprovar um desqualificado mesmo assim, com confirmação.
 2. **Formato**: Landing, Institucional ou Catálogo, com o motivo ao lado. "Site + sistema" não é formato de prévia: é assunto de reunião.
+3. **Marca**: cores (`#rrggbb`), slogan, serviço principal e até 8 serviços. Fica no lead (`brand`). Nos leads de indústria, o painel chama esses campos de "Linha principal de produtos" e "Aplicações e segmentos atendidos" (veja Template `industria`).
+4. **Kit**: logo e, no catálogo, até 24 produtos com categoria, descrição e foto. Fica em `leads/{id}/kit/marca`, fora do lead, para não pesar o painel. As imagens são convertidas para WebP (logo até 512 px, produtos até 480 px). O painel mostra o peso e avisa acima de 800 KB (o documento do Firestore aceita até 1 MB).
+5. **Gerar site modelo**: só com o lead qualificado, formato escolhido e nome da empresa. O template sai do nicho do lead (veja "Qual template a prévia usa"). Cria a prévia, liga ao lead (`previewId`), registra no histórico e abre numa aba nova. "Gerar de novo" desativa a anterior (não apaga).
+6. **Editar prévia**: todos os campos e os textos. Em branco, vale o texto padrão do template, mostrado em cinza. "Copiar logo e produtos do kit atual" atualiza as imagens.
+7. **Aprovar**: na fila ou na rodada, aprovar grava `draft.previewId` e garante que a prévia está ativa.
+
+### Link na mensagem
+
+Escreva `{link}` no texto da mensagem para o endereço da prévia entrar no lugar ao copiar ou abrir o WhatsApp. Sem `{link}`, nada é anexado: a abordagem pergunta antes e o link vai depois, pelo botão **Copiar link**.
+
+### Página pública `modelo/`
+
+- Endereço: `https://cronwebstudio.com.br/modelo/?id=<id>` (id aleatório de 20 caracteres).
+- Só abre prévia ativa. Id inválido, inexistente ou desativado mostra "Este rascunho não está disponível." sem revelar nada.
+- `noindex`, `Disallow: /modelo/` no `robots.txt`, fora do `sitemap.xml`, CSP fechada, sem script inline e anti-iframe.
+- Os botões da prévia não levam a lugar nenhum: mostram "No site final, este botão leva direto ao seu WhatsApp."
+- A prévia não guarda contato, cidade, endereço, nota do Google nem motivos internos.
+
+### Templates
+
+- Cada template fica em `modelo/templates/<nome>/` com `template.js` (textos padrão e desenho) e `template.css`.
+- Só carregam os nomes de `CRON_MODELO_TEMPLATES` em `modelo/templates/registry.js` (hoje `_base` e `industria`). Um nome fora da lista cai no `_base`.
+- Textos padrão por formato, com os marcadores `{empresa}`, `{servicoPrincipal}` e `{servicos}`. Prioridade: texto da prévia, depois o padrão do template, depois o padrão do `_base`.
+- Regras dos textos padrão: sem travessão, sem emoji, sem cidade, sem número, sem preço e sem dados inventados (anos de empresa, número de clientes, depoimentos, selos, certificações, prazos, garantias).
+
+#### Qual template a prévia usa
+
+- **Ao gerar**: `CRON_MODELO_TEMPLATE_FOR(nicho do lead)`, em `registry.js`. Primeiro o nome exato da lista; senão, o mapa por prefixo (`industria-...` vira `industria`, então `industria-maquinas`, `industria-moveis`, `industria-usinagem` e `industria-implementos` usam o template `industria`); senão, `_base`. O resultado é sempre um nome da lista.
+- O bloco "Site modelo" do lead mostra **Modelo ao gerar: Indústria** (ou **Base**) antes de gerar. Isso não grava nada no lead.
+- **Depois de gerar**: no **Editar prévia**, o seletor **Modelo** troca o template (grava o campo `template` da prévia). Ao trocar o modelo ou o formato, os textos em cinza passam a mostrar os padrões do template escolhido, e os rótulos mudam (no `industria`, "Serviços" vira "Aplicações e segmentos atendidos", por exemplo).
+
+#### Template `industria`
+
+Para indústrias de máquinas, equipamentos e implementos de pequeno e médio porte. Visual sóbrio e técnico, fotos sem corte (`object-fit: contain` sobre fundo neutro), cores só pelas variáveis do kit. A ação é sempre pedir orçamento: sem preço, sem carrinho.
+
+Os campos da prévia são os mesmos de sempre; no `industria` eles significam:
+
+| Campo | No template `industria` |
+|---|---|
+| `mainService` | Linha principal de produtos (ex.: "máquinas para panificação"). Alimenta `{servicoPrincipal}`. Sem ele, o texto usa "máquinas e equipamentos" (as aplicações não entram no lugar) |
+| `services` (até 8 de 60) | Aplicações e segmentos atendidos (ex.: "Panificação industrial"). Seção "Aplicações"; sem nenhum, a seção some |
+| `products` + `categories` (até 24 produtos, 12 categorias) | Linha de produtos, agrupada por categoria, com filtro a partir de 2 categorias. Produto sem categoria vai para "Outros produtos" |
+| `products[].description` (até 160) | Ficha técnica curta (veja abaixo) |
+| `texts.diferenciais` (até 6 de 120) | Diferenciais de fabricação |
+| `texts.benefits` (até 6 de 120) | Passos de "Como pedir orçamento" (catálogo e institucional) |
+| `texts.catalogTitle` / `catalogText` | Título e texto da linha de produtos |
+| `texts.contactTitle` / `contactText` | Bloco de pedido de orçamento |
+
+**Ficha técnica curta**: escreva a descrição do produto com uma especificação por linha, no padrão `Rótulo: valor`, até 4 linhas, tudo dentro dos 160 caracteres. O template mostra como lista de especificações. Exemplo:
+
+```
+Capacidade: 300 kg/h
+Motor: 5 cv
+Alimentação: trifásica
+```
+
+Se alguma linha não seguir o padrão (ou houver mais de 4), a descrição aparece como parágrafo. Linhas vazias são ignoradas. O `¶` continua proibido (o painel troca por espaço). Use só dados que a empresa informa; sem dado técnico, prefira uma frase curta.
+
+Seções do catálogo, nesta ordem: topo, chamada principal (com a foto do primeiro produto que tiver imagem, ou a logo, ou o monograma), linha de produtos, aplicações, diferenciais de fabricação, como pedir orçamento, sobre, pedido de orçamento (formulário só visual: não envia nada; "Pedir orçamento deste modelo" marca o produto no formulário e rola até ele) e rodapé. O institucional troca a grade de produtos por um bloco "Linha principal"; a landing tem chamada, linha principal, aplicações, diferenciais e pedido de orçamento.
+
+#### Novo nicho
+
+1. Copie `modelo/templates/_base` (ou `industria`) para `modelo/templates/<nome>` e troque o nome em `CRON_MODELO.register('<nome>', ...)`. Use prefixo próprio nas classes do CSS (o CSS do `_base` também carrega na página).
+2. Ajuste os textos padrão (regras acima) e o visual.
+3. Em `registry.js`: acrescente o nome em `CRON_MODELO_TEMPLATES`, o nome legível em `CRON_MODELO_TEMPLATE_NAMES` e, se os códigos de nicho dos leads forem diferentes do nome, um prefixo em `PREFIX` (ex.: `['saude-', 'saude']`).
+4. No `admin.html`, inclua o `template.js` novo logo depois dos outros templates (para o seletor e os textos em cinza do editor). O CSS do template não vai no painel.
+5. Se o template precisar de rótulos próprios no editor, acrescente em `LABELS`, no `js/admin-modelos.js`.
+
+### Modo demonstração
+
+Abra `admin.html?demo` no computador (arquivo local ou `localhost`). Funciona mesmo com o Firebase configurado e não grava nada no banco.
+
+### Testar as regras (opcional, no seu computador)
+
+Precisa de Node 20 ou mais novo e Java 21 ou mais novo. Os testes usam o emulador local com um projeto fictício (`demo-cron`) e nunca tocam no banco real. O `npm test` sobe o emulador a partir da raiz do repositório (onde fica o `firebase.json`) e roda `crm`, `fase2`, `fase3` e `fase4`, cada um no seu processo:
+
+```
+cd tests
+npm install
+npm test
+```
+
+## Prospecção (aba "Prospecção" do painel)
+
+O CronUS pesquisa empresas de um nicho, qualifica e deixa mensagens prontas. Você revisa, aprova e manda para o CRM. **Aprovar é sempre seu; nada é enviado sozinho.**
+
+### Dados
+
+- Coleção `rodadas`: `{ niche, nicheLabel, region (interna), criteria: { minRating, minReviews, siteStatusAccepted, requireContact }, funnel: { encontradas, notaMinima, avaliacoes, siteSemOuFraco, comContato, qualificadas }, status ('em_andamento' | 'concluida' | 'arquivada'), notes, createdBy ('admin' | 'cronus'), createdAt, updatedAt }`. Não se apaga rodada: arquiva.
+- Os candidatos ficam em `leads` mesmo, com `origin: 'cronus'`, `batchId` (id da rodada) e `prospectState`: `pendente` | `aprovado` | `descartado`. Pendentes e descartados **não aparecem no CRM**, só na Prospecção. Não existe cópia de dados entre coleções.
+- Mensagens sugeridas por canal: `drafts: { whatsapp, instagram, email }`. A escolhida e aprovada vai para `draft` (o mesmo campo do CRM). Motivo de descarte: `discardReason`.
+
+### Como funciona
+
+- **Rodadas**: lista com nicho, data, funil resumido e pendentes. Dentro da rodada: funil completo, candidatos por estado (pendentes, aprovados, descartados), mensagem por canal editável no próprio cartão.
+- **Aprovar e mandar para o CRM**: o candidato entra no CRM em **Mensagem pronta** com a mensagem que está na tela já aprovada (sem mensagem, entra em **Novo**). O histórico registra a aprovação e a mudança de etapa.
+- **Descartar**: motivo opcional. Dá para voltar o descartado para pendentes.
+- **Seleção em lote**: marque vários e use a barra que aparece embaixo (Aprovar ou Descartar).
+- **Fila de aprovação**: junta os candidatos pendentes com mensagem, de qualquer rodada, e os leads do CRM em Mensagem pronta ainda sem aprovação. Para os leads do CRM, aprovar só aprova a mensagem.
+- **Nova rodada**: dá para criar à mão (nicho, região, critérios e funil). Normalmente quem cria é o CronUS (fase 4).
+
+## Usuários (aba "Usuários" do painel)
+
+Quem tem documento em `admins/{uid}` entra no painel e pode fazer tudo, inclusive gerenciar outros usuários.
+
+### Adicionar
+
+Três jeitos, escolhidos na gaveta:
+
+1. **Enviar e-mail para criar a senha** (recomendado): o painel cria a conta com uma senha aleatória e o Firebase manda para a pessoa o e-mail de redefinição. Ninguém além dela conhece a senha.
+2. **Senha provisória**: você define e passa para a pessoa. Ela pode trocar em "Esqueci minha senha".
+3. **A conta já existe no Firebase**: cole o UID que aparece em Authentication > Usuários.
+
+A conta é criada num app secundário do Firebase, então a sua sessão não muda.
+
+**Se a criação de contas estiver desligada** no Firebase (Authentication > Configurações > Ações do usuário > "Ativar criação"), as opções 1 e 2 mostram um aviso. Nesse caso, crie a conta no console (Authentication > Usuários > Adicionar usuário) e use a opção 3. Ligar a criação de contas é seguro neste projeto: uma conta nova não vê nada sem o documento em `admins`, que só um admin cria.
+
+O e-mail de redefinição usa o modelo padrão do Firebase. Para trocar o remetente e o texto: Authentication > Modelos > Redefinição de senha.
+
+### Remover
+
+Tira o acesso ao painel na hora (se a pessoa estiver com o painel aberto, ele fecha). A conta de login continua existindo no Firebase; para apagar de vez, use Authentication > Usuários no console. Ninguém consegue remover o próprio acesso, então sempre sobra pelo menos um admin.
+
+### Dono do sistema
+
+O UID gravado em `config/owner` é o dono. Ele aparece com a etiqueta **Dono** e não tem botão Remover; as regras recusam a remoção mesmo fora do painel. Enquanto `config/owner` não existir, ninguém remove admin nenhum e a aba mostra um aviso. Como criar: veja **Acesso do CronUS**, passo 2.
+
+### Assistente (bots)
+
+Abaixo dos admins fica a seção **Assistente**, com as contas de bot (hoje, o CronUS). **Liberar assistente** pede o UID da conta (criada antes em Authentication), um nome e o e-mail. O mesmo UID não pode ser admin e bot ao mesmo tempo. **Remover** corta o acesso do bot na hora; a conta de login continua no Firebase.
+
+### Testes
+
+`tests/rules/fase2.test.js` cobre rodadas, prospecção nos leads, usuários e a proteção do dono (`cd tests && npm install && npm test`).
+
+## Sites modelo (fase 3)
+
+Para cada lead qualificado, o painel gera com um clique um rascunho de site: o template do nicho com a logo, as cores, os serviços e textos padrão já com o nome da empresa. Você aprova a mensagem e a prévia juntas. Nada é enviado sozinho.
+
+### Fluxo
+
+1. **Qualificação** (cartão da Prospecção ou gaveta do lead): Qualificado, Desqualificado (pede o motivo) ou Sem avaliação. Desqualificado não ganha prévia. Dá para aprovar um desqualificado mesmo assim, com confirmação.
+2. **Formato**: Landing, Institucional ou Catálogo, com o motivo ao lado. "Site + sistema" não é formato de prévia: é assunto de reunião.
 3. **Marca**: cores (`#rrggbb`), slogan, serviço principal e até 8 serviços. Fica no lead (`brand`).
 4. **Kit**: logo e, no catálogo, até 24 produtos com categoria, descrição e foto. Fica em `leads/{id}/kit/marca`, fora do lead, para não pesar o painel. As imagens são convertidas para WebP (logo até 512 px, produtos até 480 px). O painel mostra o peso e avisa acima de 800 KB (o documento do Firestore aceita até 1 MB).
 5. **Gerar site modelo**: só com o lead qualificado, formato escolhido e nome da empresa. Cria a prévia, liga ao lead (`previewId`), registra no histórico e abre numa aba nova. "Gerar de novo" desativa a anterior (não apaga).
@@ -301,8 +444,9 @@ Escreva `{link}` no texto da mensagem para o endereço da prévia entrar no luga
 
 ### Modo demonstração
 
-- Painel: `admin.html?demo` já traz três leads com prévia (landing, institucional e catálogo), um desqualificado e um sem avaliação. As prévias geradas no demo ficam no navegador (`localStorage`).
-- Página: `modelo/?demo=demoLanding000000001`, `modelo/?demo=demoInstitucional001` ou `modelo/?demo=demoCatalogo00000001` (só no computador).
+- Painel: `admin.html?demo` já traz leads com prévia (três no `_base` e quatro no `industria`), um desqualificado e um sem avaliação. As prévias geradas no demo ficam no navegador (`localStorage`).
+- Página, template `_base`: `modelo/?demo=demoLanding000000001`, `modelo/?demo=demoInstitucional001` ou `modelo/?demo=demoCatalogo00000001` (só no computador).
+- Página, template `industria`: `modelo/?demo=demoIndustriaCat0001` (catálogo com 24 produtos em 12 categorias, logo e fichas), `modelo/?demo=demoIndustriaUm00001` (1 produto, sem logo, sem foto, sem aplicações), `modelo/?demo=demoIndustriaInst001` (institucional) e `modelo/?demo=demoIndustriaLand001` (landing).
 
 ### Exclusão completa
 

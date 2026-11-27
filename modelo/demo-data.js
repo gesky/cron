@@ -78,17 +78,83 @@
           { name: 'Cabeceira Ripada', description: 'Painel estofado com ripas em madeira.', category: 'Cabeceiras', image: 'S3' }
         ],
         texts: {}, active: true
+      },
+      // ---------- Template industria ----------
+      (function () {
+        var ip = industriaProducts();
+        return {
+          id: 'demoIndustriaCat0001', template: 'industria', format: 'catalogo',
+          demo: { leadId: 'l18', niche: 'industria-maquinas', formatReason: 'Linha grande de máquinas por categoria e venda por orçamento.' },
+          companyName: 'Massa Forte Equipamentos (exemplo)', tagline: 'Máquinas para panificação',
+          mainService: 'Máquinas para panificação',
+          services: ['Panificação industrial', 'Padarias e confeitarias', 'Supermercados', 'Cozinhas industriais', 'Indústria de massas'],
+          primaryColor: '#b45309', secondaryColor: '#1f2937', logo: logo('M', '#b45309', '#ffffff'),
+          categories: ip.categories, products: ip.products, texts: {}, active: true
+        };
+      })(),
+      {
+        id: 'demoIndustriaUm00001', template: 'industria', format: 'catalogo',
+        demo: { leadId: 'l19', niche: 'industria-maquinas', formatReason: 'Um produto principal, mas com ficha técnica para mostrar.' },
+        companyName: 'Prensa Ágil Equipamentos (exemplo)', tagline: '',
+        mainService: 'Prensas hidráulicas', services: [],
+        primaryColor: '#334155', secondaryColor: '', logo: '',
+        categories: ['Prensas'],
+        products: [{ name: 'Prensa hidráulica de bancada', description: 'Acionamento: hidráulico\nComando: bimanual\nEstrutura: aço soldado', category: 'Prensas', image: '' }],
+        texts: {}, active: true
+      },
+      {
+        id: 'demoIndustriaInst001', template: 'industria', format: 'institucional',
+        demo: { leadId: 'l12', niche: 'industria-usinagem', formatReason: 'Fabrica sob desenho: mais aplicações do que produtos de linha.' },
+        companyName: 'Lima Usinagem (exemplo)', tagline: 'Peças usinadas sob desenho',
+        mainService: 'Peças usinadas sob desenho', services: ['Máquinas agrícolas', 'Linha automotiva', 'Indústria de alimentos', 'Manutenção industrial'],
+        primaryColor: '#1d4ed8', secondaryColor: '#94a3b8', logo: logo('L', '#1d4ed8', '#ffffff'), products: [], categories: [],
+        texts: {}, active: true
+      },
+      {
+        id: 'demoIndustriaLand001', template: 'industria', format: 'landing',
+        demo: { leadId: 'l20', niche: 'industria-implementos', formatReason: 'Uma linha principal e foco em pedidos de orçamento.' },
+        companyName: 'Agro Leve Implementos (exemplo)', tagline: 'Implementos para pequenas propriedades',
+        mainService: 'Implementos para pequenas propriedades', services: ['Preparo de solo', 'Plantio', 'Transporte na propriedade'],
+        primaryColor: '#166534', secondaryColor: '#ca8a04', logo: logo('A', '#166534', '#ffffff'), products: [], categories: [],
+        texts: {}, active: true
       }
     ];
   }
 
   function withImages(p) {
     p = JSON.parse(JSON.stringify(p));
-    var colors = [['#c6ff02', '#5c7a00'], ['#d6d3d1', '#78716c'], ['#1a1a1a', '#525252'], ['#a3e635', '#1a1a1a']];
+    var colors = [['#c6ff02', '#5c7a00'], ['#d6d3d1', '#78716c'], ['#1a1a1a', '#525252'], ['#a3e635', '#1a1a1a'],
+      ['#e7e5e4', '#a8a29e'], ['#cbd5e1', '#64748b'], ['#fde68a', '#b45309'], ['#d1d5db', '#374151']];
     (p.products || []).forEach(function (x) {
-      if (/^S\d$/.test(x.image)) { var n = Number(x.image.slice(1)); x.image = sample(n, colors[n][0], colors[n][1]); }
+      if (/^S\d+$/.test(x.image)) { var n = Number(x.image.slice(1)); var c = colors[n % colors.length]; x.image = sample(n, c[0], c[1]); }
     });
     return p;
+  }
+
+  // Catálogo de exemplo do template industria: 12 categorias, 24 modelos, fichas "Rótulo: valor"
+  function industriaProducts() {
+    var cats = ['Masseiras', 'Cilindros', 'Divisoras', 'Modeladoras', 'Fornos de lastro', 'Fornos turbo',
+      'Batedeiras', 'Fatiadoras', 'Câmaras de fermentação', 'Laminadoras', 'Moinhos', 'Acessórios'];
+    var one = ['Masseira espiral', 'Cilindro laminador', 'Divisora de massa', 'Modeladora de pães', 'Forno de lastro', 'Forno turbo',
+      'Batedeira planetária', 'Fatiadora de pães', 'Câmara de fermentação', 'Laminadora de massa', 'Moinho de farinha de rosca', 'Armário para assadeiras'];
+    var list = [];
+    cats.forEach(function (c, i) {
+      var base = one[i];
+      [0, 1].forEach(function (k) {
+        var n = i * 2 + k;
+        list.push({
+          name: base + ' modelo ' + String.fromCharCode(65 + n),
+          description: 'Capacidade: conforme o modelo\nMotor: ' + (k ? 'trifásico' : 'monofásico') + '\nAcabamento: aço carbono pintado',
+          category: c,
+          image: n % 5 === 4 ? '' : 'S' + (10 + n)
+        });
+      });
+    });
+    // casos-limite: nome de 60 caracteres, descrição que não segue o padrão, 5 linhas
+    list[4].name = 'Divisora volumétrica de massa com regulagem fina das porções';
+    list[5].description = 'Modelo compacto para bancada, indicado para produções menores. Pergunte pelas opções de acabamento.';
+    list[9].description = 'Tensão: 220 V\nMotor: trifásico\nPeso: sob consulta\nCorreia: em V\nPintura: epóxi';
+    return { categories: cats, products: list };
   }
 
   window.CRON_MODELO_DEMO = {
