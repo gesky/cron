@@ -3,7 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { initializeTestEnvironment, assertSucceeds, assertFails } = require('@firebase/rules-unit-testing');
+const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
+const { assertSucceeds, assertFails } = require('./helpers');
 const { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, addDoc, collection, serverTimestamp, deleteField } = require('firebase/firestore');
 
 let env;

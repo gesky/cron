@@ -3,9 +3,6 @@ name: Testes das regras do Firestore
 # Roda só no emulador local do runner, com o projeto fictício demo-cron. Nunca toca em produção.
 on:
   push:
-    branches-ignore: [main]
-    paths: ['firestore.rules', 'firebase.json', 'tests/**', '.github/workflows/regras.yml']
-  pull_request:
     paths: ['firestore.rules', 'firebase.json', 'tests/**', '.github/workflows/regras.yml']
   workflow_dispatch:
 
