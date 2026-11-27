@@ -26,9 +26,11 @@ O que elas fazem:
 - **rodadas**: rodadas de prospecção; admin e CronUS leem, criam e editam; só o admin arquiva; ninguém apaga.
 - **admins**: lista de quem pode entrar no painel. Os próprios admins adicionam e removem pela aba Usuários; ninguém remove o próprio acesso nem o do dono.
 - **bots**: contas de automação (CronUS). Só o admin libera e remove. Nunca entram no painel.
-- **config/owner**: UID do dono do sistema. Criado uma vez pelo console, nunca muda nem é apagado.
+- **config/owner**: UID do dono do sistema. Só o Console do Firebase cria; pelo app ninguém cria, altera ou apaga (nem um admin).
 
-O CronUS nunca apaga nada, nunca aprova mensagem nem candidato, nunca marca proposta, fechado ou perdido e nunca toca em projetos, admins, bots ou config. Detalhes em **Acesso do CronUS**, no fim deste arquivo.
+O CronUS nunca apaga nada, nunca aprova mensagem nem candidato, nunca reescreve mensagem já aprovada ou enviada, nunca marca proposta, fechado ou perdido, nunca arquiva nem desarquiva rodada e nunca toca em projetos, admins, bots ou config. Ele só edita leads que ele mesmo criou (`origin` e `createdBy` = `cronus`). Detalhes em **Acesso do CronUS**, no fim deste arquivo.
+
+**Limite de 1000 expressões.** O Firestore avalia no máximo 1000 expressões por gravação; passou disso, recusa. Por isso as regras conferem cada lista inteira numa expressão só (`join` com o separador `¶` e uma regex) e os campos de texto do lead juntos, numa regex só. Consequência prática: o caractere `¶` não pode aparecer em textos de leads, prévias e kits (o painel e o formulário do site trocam por espaço ao gravar). Os testes cobrem os piores casos: lead com todos os campos, 30 fontes e 10 links; prévia com 24 produtos, 12 categorias, 8 serviços e todos os textos; kit com 24 produtos.
 
 ## 3. Criar o seu acesso de admin
 
@@ -202,7 +204,7 @@ Abra `admin.html?demo` no computador (arquivo local ou `localhost`). Funciona me
 
 ### Testar as regras (opcional, no seu computador)
 
-Precisa de Node e Java. Os testes usam o emulador local com um projeto fictício e nunca tocam no banco real:
+Precisa de Node 20 ou mais novo e Java 21 ou mais novo. Os testes usam o emulador local com um projeto fictício (`demo-cron`) e nunca tocam no banco real. O `npm test` sobe o emulador a partir da raiz do repositório (onde fica o `firebase.json`) e roda `crm`, `fase2`, `fase3` e `fase4`, cada um no seu processo:
 
 ```
 cd tests
@@ -320,8 +322,8 @@ O CronUS grava a prospecção direto no Firestore, pela API REST, com uma conta 
 
 ### Passos no console, nesta ordem
 
-1. **Publicar as regras novas antes do merge.** Firestore > Regras > cole o `firestore.rules` desta versão > Publicar. As regras novas aceitam o painel antigo e o novo, então publicar antes não quebra nada.
-2. **Criar `config/owner`.** Firestore > Iniciar coleção `config` > ID do documento `owner` > campos `uid` (string, o seu UID, o mesmo do seu documento em `admins`) e `createdAt` (timestamp, agora) > Salvar. As regras não deixam ninguém alterar nem apagar esse documento depois (só o próprio console do Firebase consegue): confira o UID antes de salvar.
+1. **Publicar as regras e fazer o merge, um logo depois do outro.** Firestore > Regras > cole o `firestore.rules` desta versão > Publicar; em seguida, merge do PR (o GitHub Pages publica em um ou dois minutos). As regras novas e o painel novo dependem um do outro: o painel antigo grava `leadId`, `niche` e `formatReason` na prévia e os produtos como lista de objetos, que as regras novas recusam; o painel novo grava a prévia sem esses campos e os produtos em listas paralelas, que as regras antigas recusam. No intervalo entre os dois, **Gerar site modelo, editar prévia e salvar kit ficam indisponíveis** (leads, CRM e prospecção continuam funcionando). Faça num momento sem uso e, depois do merge, recarregue o painel com Ctrl+Shift+R (ou Cmd+Shift+R) para não ficar com o JS antigo em cache.
+2. **Criar `config/owner`.** Firestore > Iniciar coleção `config` > ID do documento `owner` > campos `uid` (string, o seu UID, o mesmo do seu documento em `admins`) e `createdAt` (timestamp, agora) > Salvar. Este é o único jeito de criar: pelo app ninguém cria, altera ou apaga esse documento, nem um admin (senão outro admin poderia se gravar como dono antes de você). Confira o UID antes de salvar. Enquanto ele não existir, ninguém remove admin.
 3. **Criar a conta do bot.** Authentication > Usuários > Adicionar usuário, com um e-mail só dele (ex.: um alias do seu e-mail) e uma senha longa gerada pelo gerenciador de senhas. A senha vai direto para o cofre e para a configuração do CronUS. Não cole a senha no chat, no repositório, em PR nem em comentário. Copie o UID.
 4. **Liberar o bot.** No painel, aba Usuários > Assistente > Liberar assistente > cole o UID, nome `CronUS` e o e-mail. (Pelo console também funciona: coleção `bots`, documento = UID, campos `name`, `email`, `role` = `bot`.)
 5. **Conferir.** Entre em `admin.html` com a conta do bot: o painel deve recusar ("sem acesso"). Saia em seguida.
@@ -447,13 +449,18 @@ Os valores acima são só o formato. Grave apenas dados encontrados de verdade, 
 
 **6. Kit da marca** (documento sempre `marca`; logo e fotos em WebP base64)
 
+Os produtos vão em **quatro listas paralelas do mesmo tamanho** (até 24): o produto `i` é `names[i]`, `descriptions[i]`, `categories[i]` e `images[i]`. Nome obrigatório (até 60 caracteres), descrição até 160, categoria até 40, foto vazia ou `data:image/(webp|png|jpeg);base64,...`, todas as fotos somadas até 720 mil caracteres. Nenhum texto pode ter `¶`. O mesmo formato vale para os produtos da prévia.
+
 ```json
 { "writes": [{
   "update": { "name": ".../documents/leads/ID_LEAD/kit/marca",
     "fields": { "logo": { "stringValue": "data:image/webp;base64,..." },
-      "products": { "arrayValue": { "values": [{ "mapValue": { "fields": {
-        "name": { "stringValue": "Produto" }, "category": { "stringValue": "Categoria" } } } }] } },
-      "categories": { "arrayValue": { "values": [{ "stringValue": "Categoria" }] } },
+      "products": { "mapValue": { "fields": {
+        "names": { "arrayValue": { "values": [{ "stringValue": "Mesa Aurora" }, { "stringValue": "Cadeira Lis" }] } },
+        "descriptions": { "arrayValue": { "values": [{ "stringValue": "Madeira maciça" }, { "stringValue": "" }] } },
+        "categories": { "arrayValue": { "values": [{ "stringValue": "Mesas" }, { "stringValue": "Cadeiras" }] } },
+        "images": { "arrayValue": { "values": [{ "stringValue": "data:image/webp;base64,..." }, { "stringValue": "" }] } } } } },
+      "categories": { "arrayValue": { "values": [{ "stringValue": "Mesas" }, { "stringValue": "Cadeiras" }] } },
       "updatedBy": { "stringValue": "cronus" } } },
   "updateTransforms": [{ "fieldPath": "updatedAt", "setToServerValue": "REQUEST_TIME" }]
 }]}
@@ -469,7 +476,9 @@ Os valores acima são só o formato. Grave apenas dados encontrados de verdade, 
         "mainService": { "stringValue": "Serviço principal" },
         "services": { "arrayValue": { "values": [{ "stringValue": "Serviço" }] } },
         "primaryColor": { "stringValue": "#112233" }, "secondaryColor": { "stringValue": "#ffffff" },
-        "logo": { "stringValue": "" }, "products": { "arrayValue": {} }, "categories": { "arrayValue": {} },
+        "logo": { "stringValue": "" }, "categories": { "arrayValue": {} },
+        "products": { "mapValue": { "fields": { "names": { "arrayValue": {} }, "descriptions": { "arrayValue": {} },
+          "categories": { "arrayValue": {} }, "images": { "arrayValue": {} } } } },
         "texts": { "mapValue": {} }, "active": { "booleanValue": false },
         "createdBy": { "stringValue": "cronus" } } },
     "currentDocument": { "exists": false },
@@ -503,15 +512,15 @@ Repita com `instagram`, `cnpj` ou `googleMapsUrl` quando houver. Resposta com `d
 
 ### Erros comuns
 
-- `PERMISSION_DENIED`: campo fora da lista do bot, `status` ou `prospectState` não permitido, lead que não é do CronUS, `createdAt`/`updatedAt` sem `REQUEST_TIME`, ou falta do `updateMask` (sem ele o REST substitui o documento inteiro e as regras recusam).
+- `PERMISSION_DENIED`: campo fora da lista do bot, `status` ou `prospectState` não permitido, lead que não é do CronUS, mensagem já aprovada ou enviada, `createdAt`/`updatedAt` sem `REQUEST_TIME`, falta do `updateMask` (sem ele o REST substitui o documento inteiro e as regras recusam), um `¶` em algum texto, número no lugar de texto, ou produtos fora do formato de listas paralelas.
 - `UNAUTHENTICATED`: token vencido; renove com o `refreshToken`.
 
 ### Prévias antigas
 
-As prévias criadas antes desta versão ainda têm `leadId`, `niche` e `formatReason` no documento público. O painel remove esses campos sempre que a prévia é salva, ativada ou desativada, e continua achando as antigas pelo `leadId` para listar e para a exclusão completa. Para limpar de vez: no painel, abra cada prévia ativa e salve (ou gere de novo). Não há script de migração em massa, de propósito.
+As prévias criadas antes desta versão (se houver) ainda têm `leadId`, `niche` e `formatReason` no documento público e os produtos como lista de objetos. O painel remove os três campos sempre que a prévia é salva, ativada ou desativada, e continua achando as antigas pelo `leadId` para listar e para a exclusão completa. A página `modelo/` abre os dois formatos de produto. No update, as regras conferem só os campos alterados, então desativar uma prévia antiga funciona sem regravar os produtos; salvar pelo editor regrava no formato novo. Para limpar de vez: no painel, abra cada prévia ativa e salve (ou gere de novo). Não há script de migração em massa, de propósito.
 
 ### Outros ajustes desta fase
 
 - `.nojekyll` na raiz: o GitHub Pages serve os arquivos como estão.
 - `robots.txt` com `Disallow: /tests/`.
-- Os testes de regras rodam só no emulador local e precisam de Node e Java (veja `tests/README.md`). `tests/rules/fase4.test.js` cobre o acesso do CronUS, o dono e a privacidade das prévias.
+- Os testes de regras rodam só no emulador, nunca no Firestore real: `cd tests && npm install && npm test` (precisa de Node 20 ou mais novo e Java 21 ou mais novo; veja `tests/README.md`). Os quatro arquivos rodam cada um no seu processo. O GitHub Actions roda a mesma suíte a cada push que mexe nas regras ou nos testes (`.github/workflows/regras.yml`). `tests/rules/fase4.test.js` cobre o acesso do CronUS, o dono, a privacidade das prévias e os documentos no limite do orçamento de expressões.
