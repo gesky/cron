@@ -159,10 +159,10 @@
 
     var needEl = form.querySelector('input[name="need"]:checked');
     var lead = {
-      name: form.name.value.trim().slice(0, 120),
+      name: form.name.value.replace(/\u00b6/g, ' ').trim().slice(0, 120),
       whatsapp: form.whatsapp.value.replace(/\D/g, ''),
       email: form.email.value.trim().slice(0, 160),
-      company: form.company.value.trim().slice(0, 120),
+      company: form.company.value.replace(/\u00b6/g, ' ').trim().slice(0, 120),
       need: needEl ? needEl.value : '',
       message: form.message.value.trim().slice(0, 2000),
       source: ctx.source.slice(0, 80),

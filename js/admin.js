@@ -173,6 +173,35 @@
       data.formatReason = FV.delete();
       return data;
     };
+    // Produtos e listas no formato das regras (modelo/produtos.js): ao gravar, empacota;
+    // ao ler, devolve a lista de objetos de sempre.
+    var PR = window.CRON_PRODUTOS;
+    // devolve uma cópia: quem chamou continua com a lista de objetos
+    var packLists = function (src) {
+      var data = Object.assign({}, src);
+      if ('products' in data) data.products = PR.pack(data.products);
+      if ('categories' in data) data.categories = PR.cleanList(data.categories, 12, 40);
+      if ('services' in data) data.services = PR.cleanList(data.services, 8, 60);
+      if (data.texts && typeof data.texts === 'object') {
+        data.texts = Object.assign({}, data.texts);
+        ['diferenciais', 'benefits'].forEach(function (k) {
+          if (k in data.texts) data.texts[k] = PR.cleanList(data.texts[k], 6, 120);
+        });
+      }
+      return data;
+    };
+    // ¶ separa os campos nas regras dos leads: some de qualquer texto gravado pelo painel
+    var plain = function (o) { return o && typeof o === 'object' && Object.getPrototypeOf(o) === Object.prototype; };
+    var noSep = function (v) {
+      if (typeof v === 'string') return v.indexOf('\u00b6') === -1 ? v : v.replace(/\u00b6/g, ' ');
+      if (Array.isArray(v)) return v.map(noSep);
+      if (plain(v)) { var o = {}; Object.keys(v).forEach(function (k) { o[k] = noSep(v[k]); }); return o; }
+      return v;
+    };
+    var unpackDoc = function (d) {
+      if (d && 'products' in d) d.products = PR.unpack(d.products);
+      return d;
+    };
     api = {
       now: function () { return FV.serverTimestamp(); },
       del: function () { return FV.delete(); },
@@ -188,7 +217,7 @@
         data.updatedAt = FV.serverTimestamp();
         var ref = leadsCol.doc(id);
         var batch = db.batch();
-        batch.update(ref, data);
+        batch.update(ref, noSep(data));
         addInter(batch, ref, inters);
         return batch.commit();
       },
@@ -198,7 +227,7 @@
         data.stageAt = FV.serverTimestamp();
         data.createdBy = 'admin';
         var batch = db.batch();
-        batch.set(ref, data);
+        batch.set(ref, noSep(data));
         addInter(batch, ref, inters);
         return batch.commit().then(function () { return ref.id; });
       },
@@ -269,7 +298,7 @@
               part.forEach(function (it) {
                 var ref = leadsCol.doc(it.id);
                 it.data.updatedAt = FV.serverTimestamp();
-                b.update(ref, it.data);
+                b.update(ref, noSep(it.data));
                 addInter(b, ref, it.inters);
               });
               return b.commit();
@@ -280,12 +309,12 @@
       },
       // ---------- Kit da marca e sites modelo ----------
       getKit: function (leadId) {
-        return leadsCol.doc(leadId).collection('kit').doc('marca').get().then(function (d) { return d.exists ? d.data() : null; });
+        return leadsCol.doc(leadId).collection('kit').doc('marca').get().then(function (d) { return d.exists ? unpackDoc(d.data()) : null; });
       },
       saveKit: function (leadId, data) {
         data.updatedAt = FV.serverTimestamp();
         data.updatedBy = 'admin';
-        return leadsCol.doc(leadId).collection('kit').doc('marca').set(data);
+        return leadsCol.doc(leadId).collection('kit').doc('marca').set(packLists(data));
       },
       // Lista pelo índice privado (leads/{id}/previews) e junta as prévias antigas que ainda têm leadId
       listPreviews: function (leadId) {
@@ -298,7 +327,7 @@
           res[1].docs.forEach(function (d) { if (!meta[d.id]) meta[d.id] = {}; });
           return Promise.all(Object.keys(meta).map(function (pid) {
             return db.collection('previews').doc(pid).get().then(function (d) {
-              return d.exists ? Object.assign({ id: d.id }, d.data(), { formatReason: meta[pid].formatReason || '', niche: meta[pid].niche || '' }) : null;
+              return d.exists ? Object.assign({ id: d.id }, unpackDoc(d.data()), { formatReason: meta[pid].formatReason || '', niche: meta[pid].niche || '' }) : null;
             }).catch(function () { return null; });
           }));
         }).then(function (list) {
@@ -306,7 +335,7 @@
         });
       },
       getPreview: function (id) {
-        return db.collection('previews').doc(id).get().then(function (d) { return d.exists ? Object.assign({ id: d.id }, d.data()) : null; });
+        return db.collection('previews').doc(id).get().then(function (d) { return d.exists ? Object.assign({ id: d.id }, unpackDoc(d.data())) : null; });
       },
       // Cria a prévia, liga ao lead e registra no histórico no mesmo batch. A anterior é desativada.
       // Cria a prévia pública (sem nada interno), o índice privado no lead, liga ao lead,
@@ -320,7 +349,7 @@
         data.createdBy = 'admin';
         data.active = true;
         var b = db.batch();
-        b.set(ref, data);
+        b.set(ref, packLists(data));
         b.set(lead.collection('previews').doc(ref.id), {
           niche: (meta && meta.niche) || '', formatReason: (meta && meta.formatReason) || '', createdAt: FV.serverTimestamp()
         });
@@ -331,7 +360,7 @@
       },
       updatePreview: function (id, data) {
         data.updatedAt = FV.serverTimestamp();
-        return db.collection('previews').doc(id).update(cleanPublic(data));
+        return db.collection('previews').doc(id).update(cleanPublic(packLists(data)));
       },
       setPreviewActive: function (id, active) {
         return db.collection('previews').doc(id).update(cleanPublic({ active: !!active, updatedAt: FV.serverTimestamp() }));

@@ -115,7 +115,8 @@
       var v = (isList ? own.length : own) ? own : (dT[k] != null ? dT[k] : dB[k]);
       texts[k] = isList ? (v || []).map(function (x) { return fill(x, vars); }) : fill(v || '', vars);
     });
-    var products = format === 'catalogo' && Array.isArray(p.products) ? p.products.slice(0, 24).filter(function (x) {
+    var all = window.CRON_PRODUTOS ? window.CRON_PRODUTOS.unpack(p.products) : (Array.isArray(p.products) ? p.products : []);
+    var products = format === 'catalogo' ? all.slice(0, 24).filter(function (x) {
       return x && typeof x.name === 'string' && x.name.trim();
     }).map(function (x) {
       return { name: str(x.name, 60), description: str(x.description, 160), category: str(x.category, 40), image: img(x.image) };
